@@ -26,18 +26,20 @@ archives:
       - README*
       - docs/*
 
-brews:
-  - repository:
-      owner: harperreed
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
-    homepage: "https://github.com/harperreed/pagen"
-    description: "MCP server for Apple Notes with CLI tools"
-    install: |
-      bin.install "pagen"
-    test: |
-      system "#{bin}/pagen", "help"
+# Homebrew tap integration - disabled until homebrew-tap repo is created
+# To enable: create https://github.com/harperreed/homebrew-tap repo first
+# brews:
+#   - repository:
+#       owner: harperreed
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+#     directory: Formula
+#     homepage: "https://github.com/harperreed/pagen"
+#     description: "Personal Agent Toolkit - CRM with MCP server and CLI"
+#     install: |
+#       bin.install "pagen"
+#     test: |
+#       system "#{bin}/pagen", "--version"
 
 changelog:
   sort: asc
