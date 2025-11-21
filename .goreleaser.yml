@@ -67,7 +67,7 @@ brews:
       owner: harperreed
       name: homebrew-pagen
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    folder: Formula
+    directory: Formula
     homepage: https://github.com/harperreed/pagen
     description: "Personal Agent Toolkit - CRM with MCP server and CLI"
     license: MIT
