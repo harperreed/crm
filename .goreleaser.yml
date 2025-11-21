@@ -1,0 +1,83 @@
+# ABOUTME: GoReleaser configuration for pagen releases
+# ABOUTME: Builds multi-platform binaries and creates GitHub releases
+project_name: pagen
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: pagen
+    main: .
+    binary: pagen
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+    # CGO requires separate builds per OS
+    ignore:
+      - goos: linux
+        goarch: arm64
+
+archives:
+  - id: pagen
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+
+brews:
+  - name: pagen
+    repository:
+      owner: harperreed
+      name: homebrew-pagen
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    folder: Formula
+    homepage: https://github.com/harperreed/pagen
+    description: "Personal Agent Toolkit - CRM with MCP server and CLI"
+    license: MIT
+    test: |
+      system "#{bin}/pagen", "--version"
+    install: |
+      bin.install "pagen"
+
+release:
+  github:
+    owner: harperreed
+    name: pagen
+  draft: false
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"
