@@ -23,7 +23,7 @@ func main() {
 	initOnly := flag.Bool("init", false, "Initialize database and exit")
 
 	// Parse global flags but don't fail on unknown (for subcommands)
-	flag.CommandLine.Parse(os.Args[1:])
+	_ = flag.CommandLine.Parse(os.Args[1:])
 
 	// Handle version flag
 	if *showVersion {

@@ -20,7 +20,7 @@ func AddCompanyCommand(database *sql.DB, args []string) error {
 	domain := fs.String("domain", "", "Company domain (e.g., acme.com)")
 	industry := fs.String("industry", "", "Industry")
 	notes := fs.String("notes", "", "Notes about the company")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	if *name == "" {
 		return fmt.Errorf("--name is required")
@@ -53,7 +53,7 @@ func ListCompaniesCommand(database *sql.DB, args []string) error {
 	fs := flag.NewFlagSet("list-companies", flag.ExitOnError)
 	query := fs.String("query", "", "Search by name or domain")
 	limit := fs.Int("limit", 50, "Maximum results")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	companies, err := db.FindCompanies(database, *query, *limit)
 	if err != nil {

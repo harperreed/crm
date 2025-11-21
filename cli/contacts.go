@@ -22,7 +22,7 @@ func AddContactCommand(database *sql.DB, args []string) error {
 	phone := fs.String("phone", "", "Phone number")
 	company := fs.String("company", "", "Company name")
 	notes := fs.String("notes", "", "Notes about the contact")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	if *name == "" {
 		return fmt.Errorf("--name is required")
@@ -78,7 +78,7 @@ func ListContactsCommand(database *sql.DB, args []string) error {
 	query := fs.String("query", "", "Search by name or email")
 	company := fs.String("company", "", "Filter by company name")
 	limit := fs.Int("limit", 50, "Maximum results")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	var companyIDPtr *uuid.UUID
 	if *company != "" {

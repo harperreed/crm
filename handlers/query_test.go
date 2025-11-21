@@ -9,8 +9,8 @@ import (
 
 	"github.com/harperreed/crm-mcp/db"
 	"github.com/harperreed/crm-mcp/models"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func setupQueryTestDB(t *testing.T) (*sql.DB, func()) {

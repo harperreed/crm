@@ -169,7 +169,7 @@ func AddDealNote(db *sql.DB, note *models.DealNote) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Insert note
 	_, err = tx.Exec(`

@@ -23,7 +23,7 @@ func AddDealCommand(database *sql.DB, args []string) error {
 	currency := fs.String("currency", "USD", "Currency code")
 	stage := fs.String("stage", "prospecting", "Stage (prospecting, qualification, proposal, negotiation, closed_won, closed_lost)")
 	notes := fs.String("notes", "", "Initial notes")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	if *title == "" {
 		return fmt.Errorf("--title is required")
@@ -88,7 +88,7 @@ func ListDealsCommand(database *sql.DB, args []string) error {
 	stage := fs.String("stage", "", "Filter by stage")
 	company := fs.String("company", "", "Filter by company name")
 	limit := fs.Int("limit", 50, "Maximum results")
-	fs.Parse(args)
+	_ = fs.Parse(args)
 
 	var companyIDPtr *uuid.UUID
 	if *company != "" {

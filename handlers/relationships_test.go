@@ -192,13 +192,13 @@ func TestFindContactRelationships(t *testing.T) {
 	contact3ID := contact3Data["id"].(string)
 
 	// Create multiple relationships for contact1
-	handler.LinkContacts_Legacy(map[string]interface{}{
+	_, _ = handler.LinkContacts_Legacy(map[string]interface{}{
 		"contact_id_1":      contact1ID,
 		"contact_id_2":      contact2ID,
 		"relationship_type": "colleague",
 	})
 
-	handler.LinkContacts_Legacy(map[string]interface{}{
+	_, _ = handler.LinkContacts_Legacy(map[string]interface{}{
 		"contact_id_1":      contact1ID,
 		"contact_id_2":      contact3ID,
 		"relationship_type": "friend",
@@ -274,13 +274,13 @@ func TestFindContactRelationshipsWithTypeFilter(t *testing.T) {
 	contact3ID := contact3Data["id"].(string)
 
 	// Create relationships with different types
-	handler.LinkContacts_Legacy(map[string]interface{}{
+	_, _ = handler.LinkContacts_Legacy(map[string]interface{}{
 		"contact_id_1":      contact1ID,
 		"contact_id_2":      contact2ID,
 		"relationship_type": "colleague",
 	})
 
-	handler.LinkContacts_Legacy(map[string]interface{}{
+	_, _ = handler.LinkContacts_Legacy(map[string]interface{}{
 		"contact_id_1":      contact1ID,
 		"contact_id_2":      contact3ID,
 		"relationship_type": "friend",
@@ -332,7 +332,7 @@ func TestFindContactRelationshipsBidirectional(t *testing.T) {
 	contact2ID := contact2Data["id"].(string)
 
 	// Create relationship
-	handler.LinkContacts_Legacy(map[string]interface{}{
+	_, _ = handler.LinkContacts_Legacy(map[string]interface{}{
 		"contact_id_1":      contact1ID,
 		"contact_id_2":      contact2ID,
 		"relationship_type": "colleague",

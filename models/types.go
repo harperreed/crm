@@ -33,7 +33,7 @@ type Company struct {
 type Deal struct {
 	ID                uuid.UUID  `json:"id"`
 	Title             string     `json:"title"`
-	Amount            int64      `json:"amount,omitempty"`           // in cents
+	Amount            int64      `json:"amount,omitempty"` // in cents
 	Currency          string     `json:"currency"`
 	Stage             string     `json:"stage"`
 	CompanyID         uuid.UUID  `json:"company_id"`

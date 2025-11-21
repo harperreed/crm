@@ -6,8 +6,8 @@ import (
 	"database/sql"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/harperreed/crm-mcp/db"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {
@@ -78,8 +78,8 @@ func TestFindCompaniesHandler(t *testing.T) {
 	handler := NewCompanyHandlers(database)
 
 	// Add test companies
-	handler.AddCompany_Legacy(map[string]interface{}{"name": "Acme Corp"})
-	handler.AddCompany_Legacy(map[string]interface{}{"name": "Beta Inc"})
+	_, _ = handler.AddCompany_Legacy(map[string]interface{}{"name": "Acme Corp"})
+	_, _ = handler.AddCompany_Legacy(map[string]interface{}{"name": "Beta Inc"})
 
 	input := map[string]interface{}{
 		"query": "corp",

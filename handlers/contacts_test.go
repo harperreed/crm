@@ -55,7 +55,7 @@ func TestAddContactWithCompanyName(t *testing.T) {
 
 	// First create a company
 	companyHandler := NewCompanyHandlers(database)
-	companyHandler.AddCompany_Legacy(map[string]interface{}{
+	_, _ = companyHandler.AddCompany_Legacy(map[string]interface{}{
 		"name": "Acme Corp",
 	})
 
@@ -142,8 +142,8 @@ func TestFindContactsHandler(t *testing.T) {
 	handler := NewContactHandlers(database)
 
 	// Add test contacts
-	handler.AddContact_Legacy(map[string]interface{}{"name": "Alice Smith", "email": "alice@example.com"})
-	handler.AddContact_Legacy(map[string]interface{}{"name": "Bob Jones", "email": "bob@test.com"})
+	_, _ = handler.AddContact_Legacy(map[string]interface{}{"name": "Alice Smith", "email": "alice@example.com"})
+	_, _ = handler.AddContact_Legacy(map[string]interface{}{"name": "Bob Jones", "email": "bob@test.com"})
 
 	// Search by name
 	input := map[string]interface{}{
@@ -172,7 +172,7 @@ func TestFindContactsByEmail(t *testing.T) {
 
 	handler := NewContactHandlers(database)
 
-	handler.AddContact_Legacy(map[string]interface{}{"name": "Test User", "email": "unique@example.com"})
+	_, _ = handler.AddContact_Legacy(map[string]interface{}{"name": "Test User", "email": "unique@example.com"})
 
 	input := map[string]interface{}{
 		"query": "unique@example.com",
@@ -205,7 +205,7 @@ func TestFindContactsByCompanyID(t *testing.T) {
 	companyData := companyResult.(map[string]interface{})
 	companyID := companyData["id"].(string)
 
-	handler.AddContact_Legacy(map[string]interface{}{
+	_, _ = handler.AddContact_Legacy(map[string]interface{}{
 		"name":         "Company Contact",
 		"company_name": "Test Corp",
 	})

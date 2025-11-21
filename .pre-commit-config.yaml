@@ -1,0 +1,46 @@
+# ABOUTME: Pre-commit hooks configuration for pagen project
+# ABOUTME: Runs formatting, linting, and tests before each commit
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^go\.(mod|sum)$
+      - id: end-of-file-fixer
+        exclude: ^go\.(mod|sum)$
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']  # Block files > 1MB (except binary)
+        exclude: ^pagen$  # Allow the binary
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+      - id: check-case-conflict
+
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+      - id: go-imports
+      - id: go-mod-tidy
+      - id: golangci-lint
+        args: ['--timeout=10m', '--fix']
+      - id: go-unit-tests
+        args: ['-race', '-count=1', './...']  # -count=1 disables test caching
+
+  - repo: local
+    hooks:
+      - id: go-mod-verify
+        name: go mod verify
+        entry: go mod verify
+        language: system
+        files: go\.(mod|sum)$
+        pass_filenames: false
+
+      - id: go-vet
+        name: go vet
+        entry: go vet
+        language: system
+        args: ['./...']
+        files: \.go$
+        pass_filenames: false

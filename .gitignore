@@ -1,5 +1,6 @@
 # Binaries
 crm-mcp
+pagen
 *.exe
 *.dll
 *.so

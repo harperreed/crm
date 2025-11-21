@@ -60,7 +60,7 @@ func TestCreateDealWithContactName(t *testing.T) {
 
 	// Create a contact first
 	contactHandler := NewContactHandlers(database)
-	contactHandler.AddContact_Legacy(map[string]interface{}{
+	_, _ = contactHandler.AddContact_Legacy(map[string]interface{}{
 		"name":  "John Doe",
 		"email": "john@example.com",
 	})
