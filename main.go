@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 
 	"github.com/adrg/xdg"
-	"github.com/harperreed/crm-mcp/cli"
-	"github.com/harperreed/crm-mcp/db"
+	"github.com/harperreed/pagen/cli"
+	"github.com/harperreed/pagen/db"
 )
 
 const version = "0.1.3"

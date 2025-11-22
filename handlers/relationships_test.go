@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/crm-mcp/db"
+	"github.com/harperreed/pagen/db"
 )
 
 func TestLinkContacts(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/crm-mcp/models"
+	"github.com/harperreed/pagen/models"
 )
 
 func CreateCompany(db *sql.DB, company *models.Company) error {

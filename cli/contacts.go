@@ -10,8 +10,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/crm-mcp/db"
-	"github.com/harperreed/crm-mcp/models"
+	"github.com/harperreed/pagen/db"
+	"github.com/harperreed/pagen/models"
 )
 
 // AddContactCommand adds a new contact

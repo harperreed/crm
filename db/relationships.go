@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/crm-mcp/models"
+	"github.com/harperreed/pagen/models"
 )
 
 // orderContactIDs ensures contact_id_1 < contact_id_2 for consistent bidirectional storage

@@ -7,7 +7,7 @@ import (
 	"database/sql"
 	"log"
 
-	"github.com/harperreed/crm-mcp/handlers"
+	"github.com/harperreed/pagen/handlers"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

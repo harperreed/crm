@@ -1,4 +1,4 @@
-module github.com/harperreed/crm-mcp
+module github.com/harperreed/pagen
 
 go 1.23.0
 

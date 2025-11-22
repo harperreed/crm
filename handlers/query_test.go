@@ -7,8 +7,8 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/harperreed/crm-mcp/db"
-	"github.com/harperreed/crm-mcp/models"
+	"github.com/harperreed/pagen/db"
+	"github.com/harperreed/pagen/models"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

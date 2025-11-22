@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/crm-mcp/db"
+	"github.com/harperreed/pagen/db"
 )
 
 func TestAddContactHandler(t *testing.T) {

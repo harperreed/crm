@@ -9,7 +9,7 @@ builds:
   - main: .
     binary: pagen
     goos:
-      - linux
+      - darwin
     goarch:
       - amd64
       - arm64
@@ -40,9 +40,6 @@ brews:
       bin.install "pagen"
     test: |
       system "#{bin}/pagen", "--version"
-    # Disabled - only building Linux binaries in CI
-    # macOS users should use: go install github.com/harperreed/pagen@latest
-    skip_upload: true
 
 changelog:
   sort: asc

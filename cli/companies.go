@@ -9,8 +9,8 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/harperreed/crm-mcp/db"
-	"github.com/harperreed/crm-mcp/models"
+	"github.com/harperreed/pagen/db"
+	"github.com/harperreed/pagen/models"
 )
 
 // AddCompanyCommand adds a new company

@@ -12,7 +12,7 @@ A personal agent toolkit with CRM capabilities. Works both as a Model Context Pr
 
 ## Installation
 
-### Homebrew (macOS/Linux)
+### Homebrew (macOS)
 
 ```bash
 # Add the tap
@@ -31,7 +31,7 @@ Download the latest release from [GitHub Releases](https://github.com/harperreed
 ```bash
 git clone https://github.com/harperreed/pagen.git
 cd pagen
-go build -o pagen
+CGO_ENABLED=1 go build -o pagen
 ```
 
 ## Usage

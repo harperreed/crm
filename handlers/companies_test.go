@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/harperreed/crm-mcp/db"
+	"github.com/harperreed/pagen/db"
 	_ "github.com/mattn/go-sqlite3"
 )
 

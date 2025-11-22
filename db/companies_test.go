@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/crm-mcp/models"
+	"github.com/harperreed/pagen/models"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {

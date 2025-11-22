@@ -7,8 +7,8 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/harperreed/crm-mcp/db"
-	"github.com/harperreed/crm-mcp/models"
+	"github.com/harperreed/pagen/db"
+	"github.com/harperreed/pagen/models"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
