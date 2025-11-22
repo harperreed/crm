@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "pagen": {
+      "type": "stdio",
+      "command": "/Users/harper/Public/src/personal/pagen-crm/pagen",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
+    }
+  }
+}

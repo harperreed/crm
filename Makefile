@@ -5,6 +5,7 @@
 BINARY_NAME=pagen
 GO=go
 GOFLAGS=-v
+CGO_ENABLED=1
 
 help: ## Show this help message
 	@echo "Pagen - Personal Agent Toolkit"
@@ -15,7 +16,7 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
 
 build: ## Build the pagen binary
-	$(GO) build $(GOFLAGS) -o $(BINARY_NAME)
+	CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(GOFLAGS) -o $(BINARY_NAME)
 
 test: ## Run all tests
 	$(GO) test $(GOFLAGS) ./...
@@ -32,7 +33,7 @@ clean: ## Clean build artifacts
 	rm -f coverage.out coverage.html
 
 install: build ## Build and install to GOPATH/bin
-	$(GO) install
+	CGO_ENABLED=$(CGO_ENABLED) $(GO) install
 
 lint: ## Run golangci-lint
 	golangci-lint run --timeout=10m

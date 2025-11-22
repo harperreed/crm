@@ -87,13 +87,7 @@ func (h *QueryHandlers) queryContacts(input QueryCRMInput) (*mcp.CallToolResult,
 
 func (h *QueryHandlers) queryCompanies(input QueryCRMInput) (*mcp.CallToolResult, QueryCRMOutput, error) {
 	// Query companies using existing db function
-	// Note: FindCompanies requires a query string, use empty string to get all
-	query := input.Query
-	if query == "" {
-		query = "" // FindCompanies handles empty string to return all
-	}
-
-	companies, err := db.FindCompanies(h.db, query, input.Limit)
+	companies, err := db.FindCompanies(h.db, input.Query, input.Limit)
 	if err != nil {
 		return nil, QueryCRMOutput{}, fmt.Errorf("failed to find companies: %w", err)
 	}
@@ -156,7 +150,7 @@ func (h *QueryHandlers) queryDeals(input QueryCRMInput) (*mcp.CallToolResult, Qu
 	}
 
 	// Filter by amount range in-memory (MVP approach)
-	var filteredDeals []interface{}
+	filteredDeals := make([]interface{}, 0)
 	for _, d := range deals {
 		// Check min/max amount filters
 		if minAmount != nil && d.Amount < *minAmount {
