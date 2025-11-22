@@ -29,3 +29,7 @@ pagen
 
 # Local MCP configuration
 .mcp.json
+
+# Scenario scratch files (temporary test programs)
+.scratch/
+scratch/
