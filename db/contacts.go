@@ -4,6 +4,7 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
@@ -128,21 +129,39 @@ func FindContacts(db *sql.DB, query string, companyID *uuid.UUID, limit int) ([]
 	return contacts, rows.Err()
 }
 
-func UpdateContact(db *sql.DB, contact *models.Contact) error {
-	contact.UpdatedAt = time.Now()
+func UpdateContact(db *sql.DB, id uuid.UUID, updates *models.Contact) error {
+	updates.UpdatedAt = time.Now()
 
 	var companyID *string
-	if contact.CompanyID != nil {
-		s := contact.CompanyID.String()
+	if updates.CompanyID != nil {
+		s := updates.CompanyID.String()
 		companyID = &s
 	}
 
 	_, err := db.Exec(`
 		UPDATE contacts
-		SET name = ?, email = ?, phone = ?, company_id = ?, notes = ?, last_contacted_at = ?, updated_at = ?
+		SET name = ?, email = ?, phone = ?, company_id = ?, notes = ?, updated_at = ?
 		WHERE id = ?
-	`, contact.Name, contact.Email, contact.Phone, companyID, contact.Notes, contact.LastContactedAt, contact.UpdatedAt, contact.ID.String())
+	`, updates.Name, updates.Email, updates.Phone, companyID, updates.Notes, updates.UpdatedAt, id.String())
 
+	return err
+}
+
+func DeleteContact(db *sql.DB, id uuid.UUID) error {
+	// Delete all relationships involving this contact
+	_, err := db.Exec(`DELETE FROM relationships WHERE contact_id_1 = ? OR contact_id_2 = ?`, id.String(), id.String())
+	if err != nil {
+		return fmt.Errorf("failed to delete relationships: %w", err)
+	}
+
+	// Set contact_id to NULL for any deals
+	_, err = db.Exec(`UPDATE deals SET contact_id = NULL WHERE contact_id = ?`, id.String())
+	if err != nil {
+		return fmt.Errorf("failed to update deals: %w", err)
+	}
+
+	// Delete the contact
+	_, err = db.Exec(`DELETE FROM contacts WHERE id = ?`, id.String())
 	return err
 }
 

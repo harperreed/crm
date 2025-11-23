@@ -160,7 +160,7 @@ func (h *ContactHandlers) UpdateContact(_ context.Context, request *mcp.CallTool
 		contact.Notes = input.Notes
 	}
 
-	if err := db.UpdateContact(h.db, contact); err != nil {
+	if err := db.UpdateContact(h.db, contactID, contact); err != nil {
 		return nil, ContactOutput{}, fmt.Errorf("failed to update contact: %w", err)
 	}
 
@@ -221,7 +221,7 @@ func (h *ContactHandlers) LogContactInteraction(_ context.Context, request *mcp.
 			contact.Notes = noteEntry
 		}
 
-		if err := db.UpdateContact(h.db, contact); err != nil {
+		if err := db.UpdateContact(h.db, contactID, contact); err != nil {
 			return nil, ContactOutput{}, fmt.Errorf("failed to update notes: %w", err)
 		}
 	}
@@ -375,7 +375,7 @@ func (h *ContactHandlers) UpdateContact_Legacy(args map[string]interface{}) (int
 		contact.Notes = notes
 	}
 
-	if err := db.UpdateContact(h.db, contact); err != nil {
+	if err := db.UpdateContact(h.db, contactID, contact); err != nil {
 		return nil, fmt.Errorf("failed to update contact: %w", err)
 	}
 
@@ -431,7 +431,7 @@ func (h *ContactHandlers) LogContactInteraction_Legacy(args map[string]interface
 			contact.Notes = noteEntry
 		}
 
-		if err := db.UpdateContact(h.db, contact); err != nil {
+		if err := db.UpdateContact(h.db, contactID, contact); err != nil {
 			return nil, fmt.Errorf("failed to update notes: %w", err)
 		}
 	}
