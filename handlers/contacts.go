@@ -235,6 +235,35 @@ func (h *ContactHandlers) LogContactInteraction(_ context.Context, request *mcp.
 	return nil, contactToOutput(contact), nil
 }
 
+type DeleteContactInput struct {
+	ID string `json:"id" jsonschema:"Contact ID (required)"`
+}
+
+type DeleteContactOutput struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+func (h *ContactHandlers) DeleteContact(_ context.Context, request *mcp.CallToolRequest, input DeleteContactInput) (*mcp.CallToolResult, DeleteContactOutput, error) {
+	if input.ID == "" {
+		return nil, DeleteContactOutput{}, fmt.Errorf("id is required")
+	}
+
+	contactID, err := uuid.Parse(input.ID)
+	if err != nil {
+		return nil, DeleteContactOutput{}, fmt.Errorf("invalid id: %w", err)
+	}
+
+	if err := db.DeleteContact(h.db, contactID); err != nil {
+		return nil, DeleteContactOutput{}, fmt.Errorf("failed to delete contact: %w", err)
+	}
+
+	return nil, DeleteContactOutput{
+		Success: true,
+		Message: fmt.Sprintf("Deleted contact: %s", contactID),
+	}, nil
+}
+
 func contactToOutput(contact *models.Contact) ContactOutput {
 	output := ContactOutput{
 		ID:        contact.ID.String(),

@@ -62,6 +62,11 @@ func MCPCommand(db *sql.DB) error {
 	}, contactHandlers.LogContactInteraction)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "delete_contact",
+		Description: "Delete a contact and all associated relationships",
+	}, contactHandlers.DeleteContact)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_deal",
 		Description: "Create a new deal in the CRM with company and optional contact",
 	}, dealHandlers.CreateDeal)
