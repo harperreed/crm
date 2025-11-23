@@ -130,6 +130,20 @@ func main() {
 			if err := cli.ListDealsCommand(database, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
+		case "delete-deal":
+			if err := cli.DeleteDealCommand(database, crmArgs); err != nil {
+				log.Fatalf("Error: %v", err)
+			}
+
+		// Relationship commands
+		case "update-relationship":
+			if err := cli.UpdateRelationshipCommand(database, crmArgs); err != nil {
+				log.Fatalf("Error: %v", err)
+			}
+		case "delete-relationship":
+			if err := cli.DeleteRelationshipCommand(database, crmArgs); err != nil {
+				log.Fatalf("Error: %v", err)
+			}
 
 		default:
 			fmt.Printf("Unknown crm command: %s\n\n", crmCommand)
@@ -214,6 +228,15 @@ CRM COMMANDS:
     --stage <stage>           Filter by stage
     --company <company>       Filter by company name
     --limit <n>               Max results (default: 50)
+
+  pagen crm delete-deal <id>   Delete a deal
+
+  pagen crm update-relationship [flags] <id>  Update a relationship
+    --type <type>             Relationship type
+    --context <context>       Relationship context
+    Note: flags must come before the relationship ID
+
+  pagen crm delete-relationship <id>  Delete a relationship
 
 EXAMPLES:
   # Start MCP server for Claude Desktop

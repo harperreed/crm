@@ -92,6 +92,11 @@ func MCPCommand(db *sql.DB) error {
 	}, dealHandlers.AddDealNote)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "delete_deal",
+		Description: "Delete a deal and all associated notes",
+	}, dealHandlers.DeleteDeal)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "link_contacts",
 		Description: "Create a relationship between two contacts with optional type and context",
 	}, relationshipHandlers.LinkContacts)
@@ -100,6 +105,11 @@ func MCPCommand(db *sql.DB) error {
 		Name:        "find_contact_relationships",
 		Description: "Find all relationships for a contact, with optional filtering by type",
 	}, relationshipHandlers.FindContactRelationships)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "update_relationship",
+		Description: "Update a relationship's type and context",
+	}, relationshipHandlers.UpdateRelationship)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "remove_relationship",

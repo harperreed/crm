@@ -279,6 +279,35 @@ func dealNoteToOutput(note *models.DealNote) DealNoteOutput {
 	}
 }
 
+type DeleteDealInput struct {
+	ID string `json:"id" jsonschema:"Deal ID (required)"`
+}
+
+type DeleteDealOutput struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+func (h *DealHandlers) DeleteDeal(_ context.Context, request *mcp.CallToolRequest, input DeleteDealInput) (*mcp.CallToolResult, DeleteDealOutput, error) {
+	if input.ID == "" {
+		return nil, DeleteDealOutput{}, fmt.Errorf("id is required")
+	}
+
+	dealID, err := uuid.Parse(input.ID)
+	if err != nil {
+		return nil, DeleteDealOutput{}, fmt.Errorf("invalid id: %w", err)
+	}
+
+	if err := db.DeleteDeal(h.db, dealID); err != nil {
+		return nil, DeleteDealOutput{}, fmt.Errorf("failed to delete deal: %w", err)
+	}
+
+	return nil, DeleteDealOutput{
+		Success: true,
+		Message: fmt.Sprintf("Deal %s deleted successfully", dealID),
+	}, nil
+}
+
 func isValidStage(stage string) bool {
 	validStages := []string{
 		models.StageProspecting,

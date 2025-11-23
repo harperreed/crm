@@ -4,6 +4,7 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -223,4 +224,16 @@ func GetDealNotes(db *sql.DB, dealID uuid.UUID) ([]models.DealNote, error) {
 	}
 
 	return notes, rows.Err()
+}
+
+func DeleteDeal(db *sql.DB, id uuid.UUID) error {
+	// Delete all associated notes
+	_, err := db.Exec(`DELETE FROM deal_notes WHERE deal_id = ?`, id.String())
+	if err != nil {
+		return fmt.Errorf("failed to delete deal notes: %w", err)
+	}
+
+	// Delete the deal
+	_, err = db.Exec(`DELETE FROM deals WHERE id = ?`, id.String())
+	return err
 }

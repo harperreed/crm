@@ -139,3 +139,26 @@ func ListDealsCommand(database *sql.DB, args []string) error {
 	fmt.Printf("\nTotal: %d deal(s) - $%.2f\n", len(deals), float64(total)/100.0)
 	return nil
 }
+
+// DeleteDealCommand deletes a deal
+func DeleteDealCommand(database *sql.DB, args []string) error {
+	fs := flag.NewFlagSet("delete-deal", flag.ExitOnError)
+	_ = fs.Parse(args)
+
+	if len(fs.Args()) != 1 {
+		return fmt.Errorf("usage: delete-deal <id>")
+	}
+
+	dealID, err := uuid.Parse(fs.Arg(0))
+	if err != nil {
+		return fmt.Errorf("invalid deal ID: %w", err)
+	}
+
+	err = db.DeleteDeal(database, dealID)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("✓ Deleted deal: %s\n", dealID)
+	return nil
+}

@@ -127,6 +127,15 @@ func FindContactRelationships(db *sql.DB, contactID uuid.UUID, relationshipType 
 	return relationships, rows.Err()
 }
 
+func UpdateRelationship(db *sql.DB, id uuid.UUID, relType, context string) error {
+	_, err := db.Exec(`
+		UPDATE relationships
+		SET relationship_type = ?, context = ?, updated_at = ?
+		WHERE id = ?
+	`, relType, context, time.Now(), id.String())
+	return err
+}
+
 func DeleteRelationship(db *sql.DB, id uuid.UUID) error {
 	_, err := db.Exec(`DELETE FROM relationships WHERE id = ?`, id.String())
 	return err

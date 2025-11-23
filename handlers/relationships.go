@@ -172,6 +172,37 @@ func (h *RelationshipHandlers) RemoveRelationship(_ context.Context, request *mc
 	}, nil
 }
 
+type UpdateRelationshipInput struct {
+	RelationshipID   string `json:"relationship_id" jsonschema:"Relationship ID (required)"`
+	RelationshipType string `json:"relationship_type,omitempty" jsonschema:"Updated relationship type"`
+	Context          string `json:"context,omitempty" jsonschema:"Updated relationship context"`
+}
+
+type UpdateRelationshipOutput struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+func (h *RelationshipHandlers) UpdateRelationship(_ context.Context, request *mcp.CallToolRequest, input UpdateRelationshipInput) (*mcp.CallToolResult, UpdateRelationshipOutput, error) {
+	if input.RelationshipID == "" {
+		return nil, UpdateRelationshipOutput{}, fmt.Errorf("relationship_id is required")
+	}
+
+	relationshipID, err := uuid.Parse(input.RelationshipID)
+	if err != nil {
+		return nil, UpdateRelationshipOutput{}, fmt.Errorf("invalid relationship_id: %w", err)
+	}
+
+	if err := db.UpdateRelationship(h.db, relationshipID, input.RelationshipType, input.Context); err != nil {
+		return nil, UpdateRelationshipOutput{}, fmt.Errorf("failed to update relationship: %w", err)
+	}
+
+	return nil, UpdateRelationshipOutput{
+		Success: true,
+		Message: "Relationship updated successfully",
+	}, nil
+}
+
 func relationshipToOutput(relationship *models.Relationship) RelationshipOutput {
 	return RelationshipOutput{
 		ID:               relationship.ID.String(),
