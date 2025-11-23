@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} - Pagen CRM</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+    <nav class="bg-purple-600 text-white p-4">
+        <div class="container mx-auto flex items-center justify-between">
+            <h1 class="text-2xl font-bold">Pagen CRM</h1>
+            <div class="space-x-4">
+                <a href="/" class="hover:underline">Dashboard</a>
+                <a href="/contacts" class="hover:underline">Contacts</a>
+                <a href="/companies" class="hover:underline">Companies</a>
+                <a href="/deals" class="hover:underline">Deals</a>
+                <a href="/graphs" class="hover:underline">Graphs</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto p-6">
+        {{template "content" .}}
+    </main>
+
+    <footer class="bg-gray-800 text-white p-4 mt-12">
+        <div class="container mx-auto text-center">
+            <p>Pagen CRM - Read-Only Dashboard</p>
+        </div>
+    </footer>
+</body>
+</html>

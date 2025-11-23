@@ -1,0 +1,79 @@
+{{define "content"}}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="bg-white shadow rounded-lg p-6">
+        <h2 class="text-3xl font-bold text-gray-800">Dashboard</h2>
+        <p class="text-gray-600">Overview of your CRM data</p>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="bg-white shadow rounded-lg p-6">
+            <div class="flex items-center">
+                <div class="text-4xl mr-4">📇</div>
+                <div>
+                    <p class="text-gray-600 text-sm">Contacts</p>
+                    <p class="text-3xl font-bold text-gray-800">{{.Stats.TotalContacts}}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white shadow rounded-lg p-6">
+            <div class="flex items-center">
+                <div class="text-4xl mr-4">🏢</div>
+                <div>
+                    <p class="text-gray-600 text-sm">Companies</p>
+                    <p class="text-3xl font-bold text-gray-800">{{.Stats.TotalCompanies}}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white shadow rounded-lg p-6">
+            <div class="flex items-center">
+                <div class="text-4xl mr-4">💼</div>
+                <div>
+                    <p class="text-gray-600 text-sm">Deals</p>
+                    <p class="text-3xl font-bold text-gray-800">{{.Stats.TotalDeals}}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pipeline Overview -->
+    <div class="bg-white shadow rounded-lg p-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">Pipeline Overview</h3>
+        <div class="space-y-3">
+            {{range $stage, $stats := .Stats.PipelineByStage}}
+            <div>
+                <div class="flex justify-between mb-1">
+                    <span class="text-sm font-medium text-gray-700">{{$stats.Stage}}</span>
+                    <span class="text-sm text-gray-600">{{$stats.Count}} deals (${{divide $stats.Amount 100000}}K)</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                    <div class="bg-purple-600 h-2.5 rounded-full" style="width: {{multiply (divide $stats.Count 20) 100}}%"></div>
+                </div>
+            </div>
+            {{end}}
+        </div>
+    </div>
+
+    <!-- Needs Attention -->
+    {{if or .Stats.StaleContacts .Stats.StaleDeals}}
+    <div class="bg-yellow-50 border-l-4 border-yellow-400 p-6">
+        <h3 class="text-xl font-bold text-yellow-800 mb-3">⚠️ Needs Attention</h3>
+        <div class="space-y-2">
+            {{if .Stats.StaleContacts}}
+            <p class="text-yellow-700">
+                <span class="font-semibold">{{len .Stats.StaleContacts}}</span> contacts - no contact in 30+ days
+            </p>
+            {{end}}
+            {{if .Stats.StaleDeals}}
+            <p class="text-yellow-700">
+                <span class="font-semibold">{{len .Stats.StaleDeals}}</span> deals - stale (no activity in 14+ days)
+            </p>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}
