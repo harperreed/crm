@@ -22,6 +22,7 @@ const version = "0.1.3"
 func main() {
 	// Global flags
 	showVersion := flag.Bool("version", false, "Show version and exit")
+	showHelp := flag.Bool("help", false, "Show help and exit")
 	dbPath := flag.String("db-path", "", "Database path (default: ~/.local/share/crm/crm.db)")
 	initOnly := flag.Bool("init", false, "Initialize database and exit")
 
@@ -31,6 +32,12 @@ func main() {
 	// Handle version flag
 	if *showVersion {
 		fmt.Printf("pagen version %s\n", version)
+		os.Exit(0)
+	}
+
+	// Handle help flag
+	if *showHelp {
+		printUsage()
 		os.Exit(0)
 	}
 
@@ -199,6 +206,10 @@ func main() {
 			graphArgs := vizArgs[1:]
 
 			switch graphType {
+			case "all":
+				if err := cli.VizGraphAllCommand(database, graphArgs); err != nil {
+					log.Fatalf("Error: %v", err)
+				}
 			case "contacts":
 				if err := cli.VizGraphContactsCommand(database, graphArgs); err != nil {
 					log.Fatalf("Error: %v", err)
@@ -271,9 +282,11 @@ GLOBAL FLAGS:
   --init                 Initialize database and exit (use with 'crm')
 
 COMMANDS:
+  (none)                 Launch interactive TUI (default)
   mcp                    Start MCP server for Claude Desktop
   crm                    CRM management commands
   viz                    Visualization commands
+  web                    Start web UI server
 
 MCP SERVER:
   pagen mcp              Start MCP server (for Claude Desktop integration)
@@ -334,6 +347,11 @@ CRM COMMANDS:
   pagen crm delete-relationship <id>  Delete a relationship
 
 VIZ COMMANDS:
+  pagen viz                      Show terminal dashboard
+
+  pagen viz graph all            Generate complete graph (all contacts, companies, deals)
+    --output <file>               Output file (default: stdout)
+
   pagen viz graph contacts [id]  Generate contact relationship network
     --output <file>               Output file (default: stdout)
     [id]                          Optional contact ID to center graph on
@@ -343,6 +361,10 @@ VIZ COMMANDS:
 
   pagen viz graph pipeline       Generate deal pipeline graph
     --output <file>               Output file (default: stdout)
+
+WEB UI:
+  pagen web                      Start web UI server at http://localhost:8080
+    --port <port>                 Port to listen on (default: 8080)
 
 EXAMPLES:
   # Start MCP server for Claude Desktop

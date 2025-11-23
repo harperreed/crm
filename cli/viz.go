@@ -100,6 +100,29 @@ func VizGraphPipelineCommand(db *sql.DB, args []string) error {
 	return nil
 }
 
+// VizGraphAllCommand generates a complete graph with all entities
+func VizGraphAllCommand(db *sql.DB, args []string) error {
+	fs := flag.NewFlagSet("viz graph all", flag.ExitOnError)
+	output := fs.String("output", "", "Output file (default: stdout)")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	generator := viz.NewGraphGenerator(db)
+	dot, err := generator.GenerateCompleteGraph()
+	if err != nil {
+		return err
+	}
+
+	if *output != "" {
+		return os.WriteFile(*output, []byte(dot), 0644)
+	}
+
+	fmt.Println(dot)
+	return nil
+}
+
 func VizDashboardCommand(database *sql.DB, args []string) error {
 	stats, err := viz.GenerateDashboardStats(database)
 	if err != nil {
