@@ -138,13 +138,26 @@ func UpdateContact(db *sql.DB, id uuid.UUID, updates *models.Contact) error {
 		companyID = &s
 	}
 
-	_, err := db.Exec(`
+	result, err := db.Exec(`
 		UPDATE contacts
 		SET name = ?, email = ?, phone = ?, company_id = ?, notes = ?, updated_at = ?
 		WHERE id = ?
 	`, updates.Name, updates.Email, updates.Phone, companyID, updates.Notes, updates.UpdatedAt, id.String())
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("contact not found: %s", id)
+	}
+
+	return nil
 }
 
 func DeleteContact(db *sql.DB, id uuid.UUID) error {
