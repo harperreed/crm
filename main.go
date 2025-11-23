@@ -14,6 +14,7 @@ import (
 	"github.com/harperreed/pagen/cli"
 	"github.com/harperreed/pagen/db"
 	"github.com/harperreed/pagen/tui"
+	"github.com/harperreed/pagen/web"
 )
 
 const version = "0.1.3"
@@ -220,6 +221,28 @@ func main() {
 			fmt.Printf("Unknown viz command: %s\n\n", vizCommand)
 			printUsage()
 			os.Exit(1)
+		}
+
+	case "web":
+		port := 8080
+		if len(commandArgs) > 0 && commandArgs[0] == "--port" && len(commandArgs) > 1 {
+			_, _ = fmt.Sscanf(commandArgs[1], "%d", &port)
+		}
+
+		finalDBPath := getDatabasePath(*dbPath)
+		database, err := db.OpenDatabase(finalDBPath)
+		if err != nil {
+			log.Fatalf("Failed to open database: %v", err)
+		}
+		defer database.Close()
+
+		server, err := web.NewServer(database)
+		if err != nil {
+			log.Fatalf("Failed to create web server: %v", err)
+		}
+
+		if err := server.Start(port); err != nil {
+			log.Fatalf("Web server error: %v", err)
 		}
 
 	default:
