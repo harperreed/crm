@@ -176,3 +176,108 @@ func SetContactCadence(db *sql.DB, contactID uuid.UUID, days int, strength strin
 
 	return CreateContactCadence(db, cadence)
 }
+
+// LogInteraction records a new interaction and updates contact cadence
+func LogInteraction(db *sql.DB, interaction *models.InteractionLog) error {
+	// Generate ID if not set
+	if interaction.ID == uuid.Nil {
+		interaction.ID = uuid.New()
+	}
+
+	// Insert interaction
+	query := `
+		INSERT INTO interaction_log (
+			id, contact_id, interaction_type, timestamp, notes, sentiment
+		) VALUES (?, ?, ?, ?, ?, ?)
+	`
+
+	_, err := db.Exec(query,
+		interaction.ID.String(),
+		interaction.ContactID.String(),
+		interaction.InteractionType,
+		interaction.Timestamp,
+		interaction.Notes,
+		interaction.Sentiment,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Update contact's last_contacted_at
+	updateContact := `UPDATE contacts SET last_contacted_at = ? WHERE id = ?`
+	_, err = db.Exec(updateContact, interaction.Timestamp, interaction.ContactID.String())
+	if err != nil {
+		return err
+	}
+
+	// Update cadence
+	return UpdateCadenceAfterInteraction(db, interaction.ContactID, interaction.Timestamp)
+}
+
+// GetInteractionHistory retrieves interaction history for a contact
+func GetInteractionHistory(db *sql.DB, contactID uuid.UUID, limit int) ([]models.InteractionLog, error) {
+	query := `
+		SELECT id, contact_id, interaction_type, timestamp, notes, sentiment
+		FROM interaction_log
+		WHERE contact_id = ?
+		ORDER BY timestamp DESC
+		LIMIT ?
+	`
+
+	rows, err := db.Query(query, contactID.String(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	var interactions []models.InteractionLog
+	for rows.Next() {
+		var i models.InteractionLog
+		var id, contactID string
+		err := rows.Scan(&id, &contactID, &i.InteractionType, &i.Timestamp, &i.Notes, &i.Sentiment)
+		if err != nil {
+			return nil, err
+		}
+		i.ID, _ = uuid.Parse(id)
+		i.ContactID, _ = uuid.Parse(contactID)
+		interactions = append(interactions, i)
+	}
+
+	return interactions, rows.Err()
+}
+
+// GetRecentInteractions gets all recent interactions across all contacts
+func GetRecentInteractions(db *sql.DB, days int, limit int) ([]models.InteractionLog, error) {
+	query := `
+		SELECT id, contact_id, interaction_type, timestamp, notes, sentiment
+		FROM interaction_log
+		WHERE timestamp >= datetime('now', '-' || ? || ' days')
+		ORDER BY timestamp DESC
+		LIMIT ?
+	`
+
+	rows, err := db.Query(query, days, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	var interactions []models.InteractionLog
+	for rows.Next() {
+		var i models.InteractionLog
+		var id, contactID string
+		err := rows.Scan(&id, &contactID, &i.InteractionType, &i.Timestamp, &i.Notes, &i.Sentiment)
+		if err != nil {
+			return nil, err
+		}
+		i.ID, _ = uuid.Parse(id)
+		i.ContactID, _ = uuid.Parse(contactID)
+		interactions = append(interactions, i)
+	}
+
+	return interactions, rows.Err()
+}
