@@ -51,7 +51,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to open database: %v", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		tuiModel := tui.NewModel(database)
 		p := tea.NewProgram(tuiModel, tea.WithAltScreen())
@@ -73,7 +73,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to open database: %v", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		if err := cli.MCPCommand(database); err != nil {
 			log.Fatalf("MCP server failed: %v", err)
@@ -86,7 +86,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to open database: %v", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		log.Printf("CRM database: %s", finalDBPath)
 
@@ -179,7 +179,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to open database: %v", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		log.Printf("CRM database: %s", finalDBPath)
 
@@ -245,7 +245,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to open database: %v", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		server, err := web.NewServer(database)
 		if err != nil {

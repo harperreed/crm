@@ -18,13 +18,13 @@ func (g *GraphGenerator) GenerateContactGraph(contactID *uuid.UUID) (string, err
 	if err != nil {
 		return "", fmt.Errorf("failed to create graphviz instance: %w", err)
 	}
-	defer gv.Close()
+	defer func() { _ = gv.Close() }()
 
 	graph, err := gv.Graph()
 	if err != nil {
 		return "", fmt.Errorf("failed to create graph: %w", err)
 	}
-	defer graph.Close()
+	defer func() { _ = graph.Close() }()
 
 	graph.SetLayout("neato")
 	graph.SetRankDir(cgraph.LRRank)

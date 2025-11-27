@@ -12,7 +12,7 @@ import (
 
 func TestCreateRelationship(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create two contacts
 	contact1 := &models.Contact{Name: "Alice Smith"}
@@ -74,7 +74,7 @@ func TestCreateRelationship(t *testing.T) {
 
 func TestGetRelationship(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create two contacts
 	contact1 := &models.Contact{Name: "Alice Smith"}
@@ -134,7 +134,7 @@ func TestGetRelationship(t *testing.T) {
 
 func TestFindRelationshipsBetween(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create two contacts
 	contact1 := &models.Contact{Name: "Alice Smith"}
@@ -195,7 +195,7 @@ func TestFindRelationshipsBetween(t *testing.T) {
 
 func TestFindContactRelationships(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create three contacts
 	contact1 := &models.Contact{Name: "Alice Smith"}
@@ -298,7 +298,7 @@ func TestFindContactRelationships(t *testing.T) {
 
 func TestDeleteRelationship(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create two contacts
 	contact1 := &models.Contact{Name: "Alice Smith"}

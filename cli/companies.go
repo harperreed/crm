@@ -68,8 +68,8 @@ func ListCompaniesCommand(database *sql.DB, args []string) error {
 
 	// Pretty print results
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tDOMAIN\tINDUSTRY\tID")
-	fmt.Fprintln(w, "----\t------\t--------\t--")
+	_, _ = fmt.Fprintln(w, "NAME\tDOMAIN\tINDUSTRY\tID")
+	_, _ = fmt.Fprintln(w, "----\t------\t--------\t--")
 
 	for _, company := range companies {
 		domain := company.Domain
@@ -81,10 +81,10 @@ func ListCompaniesCommand(database *sql.DB, args []string) error {
 			industry = "-"
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 			company.Name, domain, industry, company.ID.String()[:8])
 	}
-	w.Flush()
+	_ = w.Flush()
 
 	fmt.Printf("\nTotal: %d company(ies)\n", len(companies))
 	return nil

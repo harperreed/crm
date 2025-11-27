@@ -64,7 +64,7 @@ func FindCompanies(db *sql.DB, query string, limit int) ([]models.Company, error
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var companies []models.Company
 	for rows.Next() {

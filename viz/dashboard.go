@@ -195,7 +195,7 @@ func renderPipeline(out *strings.Builder, pipeline map[string]PipelineStageStats
 		// Format amount in K
 		amountK := pstats.Amount / 100000
 
-		out.WriteString(fmt.Sprintf("  %-13s %s  %2d ($%dK)\n",
-			stage, bar, pstats.Count, amountK))
+		fmt.Fprintf(out, "  %-13s %s  %2d ($%dK)\n",
+			stage, bar, pstats.Count, amountK)
 	}
 }

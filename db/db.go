@@ -28,7 +28,7 @@ func OpenDatabase(path string) (*sql.DB, error) {
 
 	// Initialize schema
 	if err := InitSchema(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 

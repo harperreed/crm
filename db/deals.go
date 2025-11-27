@@ -138,7 +138,7 @@ func FindDeals(db *sql.DB, stage string, companyID *uuid.UUID, limit int) ([]mod
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var deals []models.Deal
 	for rows.Next() {
@@ -212,7 +212,7 @@ func GetDealNotes(db *sql.DB, dealID uuid.UUID) ([]models.DealNote, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var notes []models.DealNote
 	for rows.Next() {

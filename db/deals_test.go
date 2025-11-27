@@ -12,7 +12,7 @@ import (
 
 func TestCreateDeal(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create company
 	company := &models.Company{Name: "Deal Corp"}
@@ -43,7 +43,7 @@ func TestCreateDeal(t *testing.T) {
 
 func TestUpdateDeal(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	company := &models.Company{Name: "Deal Corp"}
 	if err := CreateCompany(db, company); err != nil {
@@ -86,7 +86,7 @@ func TestUpdateDeal(t *testing.T) {
 
 func TestAddDealNote(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	company := &models.Company{Name: "Note Corp"}
 	if err := CreateCompany(db, company); err != nil {
@@ -145,7 +145,7 @@ func TestAddDealNote(t *testing.T) {
 
 func TestAddDealNoteUpdatesContact(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create company
 	company := &models.Company{Name: "Contact Update Corp"}
@@ -205,7 +205,7 @@ func TestAddDealNoteUpdatesContact(t *testing.T) {
 
 func TestFindDeals(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create company
 	company := &models.Company{Name: "Search Corp"}

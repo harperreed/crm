@@ -14,7 +14,7 @@ func TestInitSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open in-memory db: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := InitSchema(db); err != nil {
 		t.Fatalf("InitSchema failed: %v", err)

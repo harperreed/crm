@@ -11,7 +11,7 @@ import (
 
 func TestLinkContacts(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewRelationshipHandlers(database)
 	contactHandler := NewContactHandlers(database)
@@ -77,7 +77,7 @@ func TestLinkContacts(t *testing.T) {
 
 func TestLinkContactsWithoutOptionalFields(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewRelationshipHandlers(database)
 	contactHandler := NewContactHandlers(database)
@@ -118,7 +118,7 @@ func TestLinkContactsWithoutOptionalFields(t *testing.T) {
 
 func TestLinkContactsValidation(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewRelationshipHandlers(database)
 
@@ -167,7 +167,7 @@ func TestLinkContactsValidation(t *testing.T) {
 
 func TestFindContactRelationships(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewRelationshipHandlers(database)
 	contactHandler := NewContactHandlers(database)
@@ -249,7 +249,7 @@ func TestFindContactRelationships(t *testing.T) {
 
 func TestFindContactRelationshipsWithTypeFilter(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewRelationshipHandlers(database)
 	contactHandler := NewContactHandlers(database)
@@ -313,7 +313,7 @@ func TestFindContactRelationshipsWithTypeFilter(t *testing.T) {
 
 func TestFindContactRelationshipsBidirectional(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewRelationshipHandlers(database)
 	contactHandler := NewContactHandlers(database)
@@ -380,7 +380,7 @@ func TestFindContactRelationshipsBidirectional(t *testing.T) {
 
 func TestRemoveRelationship(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewRelationshipHandlers(database)
 	contactHandler := NewContactHandlers(database)
@@ -440,7 +440,7 @@ func TestRemoveRelationship(t *testing.T) {
 
 func TestRemoveRelationshipValidation(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewRelationshipHandlers(database)
 

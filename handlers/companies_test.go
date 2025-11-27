@@ -23,7 +23,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 
 func TestAddCompanyHandler(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewCompanyHandlers(database)
 
@@ -56,7 +56,7 @@ func TestAddCompanyHandler(t *testing.T) {
 
 func TestAddCompanyValidation(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewCompanyHandlers(database)
 
@@ -73,7 +73,7 @@ func TestAddCompanyValidation(t *testing.T) {
 
 func TestFindCompaniesHandler(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewCompanyHandlers(database)
 

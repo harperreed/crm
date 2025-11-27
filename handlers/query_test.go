@@ -24,7 +24,7 @@ func setupQueryTestDB(t *testing.T) (*sql.DB, func()) {
 	}
 
 	cleanup := func() {
-		database.Close()
+		_ = database.Close()
 	}
 
 	return database, cleanup

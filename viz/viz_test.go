@@ -23,8 +23,8 @@ func setupTestDB(t *testing.T) (*sql.DB, func()) {
 	}
 
 	cleanup := func() {
-		database.Close()
-		os.Remove(tmpDb)
+		_ = database.Close()
+		_ = os.Remove(tmpDb)
 	}
 
 	return database, cleanup

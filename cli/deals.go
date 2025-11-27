@@ -113,8 +113,8 @@ func ListDealsCommand(database *sql.DB, args []string) error {
 
 	// Pretty print results
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "TITLE\tCOMPANY\tAMOUNT\tSTAGE\tID")
-	fmt.Fprintln(w, "-----\t-------\t------\t-----\t--")
+	_, _ = fmt.Fprintln(w, "TITLE\tCOMPANY\tAMOUNT\tSTAGE\tID")
+	_, _ = fmt.Fprintln(w, "-----\t-------\t------\t-----\t--")
 
 	for _, deal := range deals {
 		companyName := "-"
@@ -125,10 +125,10 @@ func ListDealsCommand(database *sql.DB, args []string) error {
 
 		amountStr := fmt.Sprintf("$%.2f", float64(deal.Amount)/100.0)
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 			deal.Title, companyName, amountStr, deal.Stage, deal.ID.String()[:8])
 	}
-	w.Flush()
+	_ = w.Flush()
 
 	// Calculate total
 	var total int64

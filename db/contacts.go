@@ -105,7 +105,7 @@ func FindContacts(db *sql.DB, query string, companyID *uuid.UUID, limit int) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var contacts []models.Contact
 	for rows.Next() {

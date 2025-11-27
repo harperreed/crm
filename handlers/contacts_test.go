@@ -12,7 +12,7 @@ import (
 
 func TestAddContactHandler(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewContactHandlers(database)
 
@@ -49,7 +49,7 @@ func TestAddContactHandler(t *testing.T) {
 
 func TestAddContactWithCompanyName(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewContactHandlers(database)
 
@@ -83,7 +83,7 @@ func TestAddContactWithCompanyName(t *testing.T) {
 
 func TestAddContactCreatesNewCompany(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewContactHandlers(database)
 
@@ -120,7 +120,7 @@ func TestAddContactCreatesNewCompany(t *testing.T) {
 
 func TestAddContactValidation(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewContactHandlers(database)
 
@@ -137,7 +137,7 @@ func TestAddContactValidation(t *testing.T) {
 
 func TestFindContactsHandler(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewContactHandlers(database)
 
@@ -168,7 +168,7 @@ func TestFindContactsHandler(t *testing.T) {
 
 func TestFindContactsByEmail(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewContactHandlers(database)
 
@@ -195,7 +195,7 @@ func TestFindContactsByEmail(t *testing.T) {
 
 func TestFindContactsByCompanyID(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewContactHandlers(database)
 
@@ -231,7 +231,7 @@ func TestFindContactsByCompanyID(t *testing.T) {
 
 func TestUpdateContactHandler(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewContactHandlers(database)
 
@@ -276,7 +276,7 @@ func TestUpdateContactHandler(t *testing.T) {
 
 func TestUpdateContactNotFound(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewContactHandlers(database)
 
@@ -293,7 +293,7 @@ func TestUpdateContactNotFound(t *testing.T) {
 
 func TestLogContactInteractionHandler(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewContactHandlers(database)
 
@@ -334,7 +334,7 @@ func TestLogContactInteractionHandler(t *testing.T) {
 
 func TestLogContactInteractionWithCustomDate(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewContactHandlers(database)
 
@@ -381,7 +381,7 @@ func TestLogContactInteractionWithCustomDate(t *testing.T) {
 
 func TestLogContactInteractionNotFound(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewContactHandlers(database)
 

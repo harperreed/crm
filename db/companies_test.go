@@ -23,7 +23,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 
 func TestCreateCompany(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	company := &models.Company{
 		Name:     "Acme Corp",
@@ -51,7 +51,7 @@ func TestCreateCompany(t *testing.T) {
 
 func TestGetCompany(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create company
 	company := &models.Company{Name: "Test Corp"}
@@ -76,7 +76,7 @@ func TestGetCompany(t *testing.T) {
 
 func TestFindCompanies(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create test companies
 	companies := []*models.Company{
@@ -104,7 +104,7 @@ func TestFindCompanies(t *testing.T) {
 
 func TestFindCompanyByName(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	company := &models.Company{Name: "Unique Corp"}
 	if err := CreateCompany(db, company); err != nil {

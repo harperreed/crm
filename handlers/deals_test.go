@@ -12,7 +12,7 @@ import (
 
 func TestCreateDeal(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 
@@ -54,7 +54,7 @@ func TestCreateDeal(t *testing.T) {
 
 func TestCreateDealWithContactName(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 
@@ -90,7 +90,7 @@ func TestCreateDealWithContactName(t *testing.T) {
 
 func TestCreateDealWithoutContact(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 
@@ -118,7 +118,7 @@ func TestCreateDealWithoutContact(t *testing.T) {
 
 func TestCreateDealWithInitialNote(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 
@@ -158,7 +158,7 @@ func TestCreateDealWithInitialNote(t *testing.T) {
 
 func TestCreateDealDefaults(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 
@@ -189,7 +189,7 @@ func TestCreateDealDefaults(t *testing.T) {
 
 func TestCreateDealValidation(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 
@@ -216,7 +216,7 @@ func TestCreateDealValidation(t *testing.T) {
 
 func TestUpdateDeal(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 
@@ -263,7 +263,7 @@ func TestUpdateDeal(t *testing.T) {
 
 func TestUpdateDealStage(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 
@@ -298,7 +298,7 @@ func TestUpdateDealStage(t *testing.T) {
 
 func TestUpdateDealExpectedCloseDate(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 
@@ -334,7 +334,7 @@ func TestUpdateDealExpectedCloseDate(t *testing.T) {
 
 func TestUpdateDealNotFound(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 
@@ -351,7 +351,7 @@ func TestUpdateDealNotFound(t *testing.T) {
 
 func TestUpdateDealInvalidStage(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 
@@ -377,7 +377,7 @@ func TestUpdateDealInvalidStage(t *testing.T) {
 
 func TestAddDealNote(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 
@@ -424,7 +424,7 @@ func TestAddDealNote(t *testing.T) {
 
 func TestAddDealNoteUpdatesContactLastContactedAt(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 
@@ -471,7 +471,7 @@ func TestAddDealNoteUpdatesContactLastContactedAt(t *testing.T) {
 
 func TestAddDealNoteNotFound(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	handler := NewDealHandlers(database)
 

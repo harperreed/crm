@@ -184,7 +184,8 @@ func (h *PromptHandlers) getRelationshipMapPrompt(args map[string]string) (*mcp.
 
 	var promptText strings.Builder
 
-	if entityType == "contact" {
+	switch entityType {
+	case "contact":
 		contact, err := db.GetContact(h.db, entityID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch contact: %w", err)
@@ -219,7 +220,7 @@ func (h *PromptHandlers) getRelationshipMapPrompt(args map[string]string) (*mcp.
 				}
 			}
 		}
-	} else if entityType == "company" {
+	case "company":
 		company, err := db.GetCompany(h.db, entityID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch company: %w", err)
@@ -243,7 +244,7 @@ func (h *PromptHandlers) getRelationshipMapPrompt(args map[string]string) (*mcp.
 				promptText.WriteString("\n")
 			}
 		}
-	} else {
+	default:
 		return nil, fmt.Errorf("invalid entity_type: must be 'contact' or 'company'")
 	}
 

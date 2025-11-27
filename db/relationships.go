@@ -75,7 +75,7 @@ func FindRelationshipsBetween(db *sql.DB, contactID1, contactID2 uuid.UUID) ([]m
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var relationships []models.Relationship
 	for rows.Next() {
@@ -113,7 +113,7 @@ func FindContactRelationships(db *sql.DB, contactID uuid.UUID, relationshipType 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var relationships []models.Relationship
 	for rows.Next() {
@@ -150,7 +150,7 @@ func GetAllRelationships(db *sql.DB) ([]models.Relationship, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var relationships []models.Relationship
 	for rows.Next() {

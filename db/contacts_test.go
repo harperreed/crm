@@ -12,7 +12,7 @@ import (
 
 func TestCreateContact(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	contact := &models.Contact{
 		Name:  "John Doe",
@@ -32,7 +32,7 @@ func TestCreateContact(t *testing.T) {
 
 func TestCreateContactWithCompany(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create company first
 	company := &models.Company{Name: "Test Corp"}
@@ -64,7 +64,7 @@ func TestCreateContactWithCompany(t *testing.T) {
 
 func TestUpdateContactLastContacted(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	contact := &models.Contact{Name: "Test Contact"}
 	if err := CreateContact(db, contact); err != nil {

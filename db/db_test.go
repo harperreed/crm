@@ -14,7 +14,7 @@ func TestOpenDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenDatabase failed: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Verify database file exists
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
@@ -62,7 +62,7 @@ func TestOpenDatabaseSchemaInitFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Initial OpenDatabase failed: %v", err)
 	}
-	db.Close()
+	_ = db.Close()
 
 	// Now try to open the database again - schema initialization should handle existing tables gracefully
 	// This tests that "CREATE TABLE IF NOT EXISTS" statements don't fail
@@ -71,7 +71,7 @@ func TestOpenDatabaseSchemaInitFailure(t *testing.T) {
 		t.Errorf("OpenDatabase should handle re-initialization gracefully, but got error: %v", err)
 	}
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 
 	// Verify tables still exist after re-initialization
