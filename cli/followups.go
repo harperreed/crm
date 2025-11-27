@@ -159,3 +159,126 @@ func LogInteractionCommand(database *sql.DB, args []string) error {
 	fmt.Printf("✓ Logged %s interaction with contact\n", *interactionType)
 	return nil
 }
+
+// SetCadenceCommand sets the follow-up cadence for a contact
+func SetCadenceCommand(database *sql.DB, args []string) error {
+	fs := flag.NewFlagSet("set-cadence", flag.ExitOnError)
+	contactIDStr := fs.String("contact", "", "Contact ID or name (required)")
+	days := fs.Int("days", 30, "Cadence in days")
+	strength := fs.String("strength", "medium", "Relationship strength (weak/medium/strong)")
+	_ = fs.Parse(args)
+
+	if *contactIDStr == "" {
+		return fmt.Errorf("--contact is required")
+	}
+
+	// Resolve contact ID
+	var contactID uuid.UUID
+	parsedID, err := uuid.Parse(*contactIDStr)
+	if err == nil {
+		contactID = parsedID
+	} else {
+		contacts, err := db.FindContacts(database, *contactIDStr, nil, 10)
+		if err != nil {
+			return fmt.Errorf("failed to find contact: %w", err)
+		}
+		if len(contacts) == 0 {
+			return fmt.Errorf("no contact found matching: %s", *contactIDStr)
+		}
+		contactID = contacts[0].ID
+	}
+
+	err = db.SetContactCadence(database, contactID, *days, *strength)
+	if err != nil {
+		return fmt.Errorf("failed to set cadence: %w", err)
+	}
+
+	fmt.Printf("✓ Set cadence to %d days (%s strength)\n", *days, *strength)
+	return nil
+}
+
+// DigestCommand generates a daily follow-up digest
+func DigestCommand(database *sql.DB, args []string) error {
+	fs := flag.NewFlagSet("digest", flag.ExitOnError)
+	format := fs.String("format", "text", "Output format (text/json/html)")
+	_ = fs.Parse(args)
+
+	followups, err := db.GetFollowupList(database, 50)
+	if err != nil {
+		return fmt.Errorf("failed to get followup list: %w", err)
+	}
+
+	switch *format {
+	case "text":
+		return printTextDigest(followups)
+	case "json":
+		return printJSONDigest(followups)
+	case "html":
+		return printHTMLDigest(followups)
+	}
+
+	return fmt.Errorf("unsupported format: %s", *format)
+}
+
+func printTextDigest(followups []models.FollowupContact) error {
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Printf("  FOLLOW-UPS FOR %s\n", time.Now().Format("2006-01-02"))
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
+
+	// Split into categories
+	var overdue, dueSoon []models.FollowupContact
+	for _, f := range followups {
+		if f.DaysSinceContact > f.CadenceDays+7 {
+			overdue = append(overdue, f)
+		} else if f.DaysSinceContact >= f.CadenceDays-3 {
+			dueSoon = append(dueSoon, f)
+		}
+	}
+
+	if len(overdue) > 0 {
+		fmt.Printf("🔴 OVERDUE (%d contacts)\n", len(overdue))
+		for _, f := range overdue {
+			fmt.Printf("  %-20s  %3d days  (priority: %.0f)\n", f.Name, f.DaysSinceContact, f.PriorityScore)
+		}
+		fmt.Println()
+	}
+
+	if len(dueSoon) > 0 {
+		fmt.Printf("🟡 DUE SOON (%d contacts)\n", len(dueSoon))
+		for _, f := range dueSoon {
+			fmt.Printf("  %-20s  %3d days  (priority: %.0f)\n", f.Name, f.DaysSinceContact, f.PriorityScore)
+		}
+		fmt.Println()
+	}
+
+	return nil
+}
+
+func printJSONDigest(followups []models.FollowupContact) error {
+	// Simple JSON output for webhook integration
+	fmt.Printf("{\"date\":\"%s\",\"followups\":[", time.Now().Format("2006-01-02"))
+	for i, f := range followups {
+		if i > 0 {
+			fmt.Print(",")
+		}
+		fmt.Printf("{\"name\":\"%s\",\"days\":%d,\"priority\":%.1f}",
+			f.Name, f.DaysSinceContact, f.PriorityScore)
+	}
+	fmt.Println("]}")
+	return nil
+}
+
+func printHTMLDigest(followups []models.FollowupContact) error {
+	fmt.Println("<html><body>")
+	fmt.Printf("<h1>Follow-Ups for %s</h1>\n", time.Now().Format("2006-01-02"))
+	fmt.Println("<table border='1'>")
+	fmt.Println("<tr><th>Name</th><th>Days Since</th><th>Priority</th></tr>")
+	for _, f := range followups {
+		fmt.Printf("<tr><td>%s</td><td>%d</td><td>%.1f</td></tr>\n",
+			f.Name, f.DaysSinceContact, f.PriorityScore)
+	}
+	fmt.Println("</table>")
+	fmt.Println("</body></html>")
+	return nil
+}
