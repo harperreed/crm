@@ -24,6 +24,7 @@ func MCPCommand(db *sql.DB) error {
 	resourceHandlers := handlers.NewResourceHandlers(db)
 	promptHandlers := handlers.NewPromptHandlers(db)
 	vizHandlers := handlers.NewVizHandlers(db)
+	followupHandlers := handlers.NewFollowupHandlers(db)
 
 	// Create MCP server
 	server := mcp.NewServer(&mcp.Implementation{
@@ -126,6 +127,21 @@ func MCPCommand(db *sql.DB) error {
 		Name:        "generate_graph",
 		Description: "Generate GraphViz relationship/org/pipeline graphs",
 	}, vizHandlers.GenerateGraph)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_followup_list",
+		Description: "Get list of contacts needing follow-up, sorted by priority",
+	}, followupHandlers.GetFollowupList)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "log_interaction",
+		Description: "Log an interaction with a contact and update follow-up tracking",
+	}, followupHandlers.LogInteraction)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "set_cadence",
+		Description: "Set the follow-up cadence and relationship strength for a contact",
+	}, followupHandlers.SetCadence)
 
 	// Register resources
 	server.AddResourceTemplate(&mcp.ResourceTemplate{
