@@ -193,6 +193,18 @@ func ImportCalendar(database *sql.DB, client *calendar.Service, initial bool) er
 				continue
 			}
 
+			// Check if event already imported
+			exists, err := db.CheckSyncLogExists(database, calendarService, event.Id)
+			if err != nil {
+				// Log error but continue processing other events
+				fmt.Printf("  ✗ Failed to check sync log for event %q: %v\n", event.Summary, err)
+				continue
+			}
+			if exists {
+				skipCounts["already imported"]++
+				continue
+			}
+
 			// Extract contacts from attendees
 			contactIDs, err := extractContacts(database, event, userEmail, matcher)
 			if err != nil {
@@ -206,6 +218,16 @@ func ImportCalendar(database *sql.DB, client *calendar.Service, initial bool) er
 				if err := logInteraction(database, event, contactIDs); err != nil {
 					// Log error but continue processing other events
 					fmt.Printf("  ✗ Failed to log interaction for event %q: %v\n", event.Summary, err)
+					continue
+				}
+
+				// Record in sync log after successful import
+				syncLogID := uuid.New().String()
+				entityID := contactIDs[0].String() // Use first contact ID
+				metadata := fmt.Sprintf(`{"event_summary":"%s"}`, event.Summary)
+				if err := db.CreateSyncLog(database, syncLogID, calendarService, event.Id, "interaction", entityID, metadata); err != nil {
+					// Log error but continue processing other events
+					fmt.Printf("  ✗ Failed to create sync log for event %q: %v\n", event.Summary, err)
 					continue
 				}
 			}

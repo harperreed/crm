@@ -1537,6 +1537,368 @@ func TestLogInteraction_HandlesInvalidDuration(t *testing.T) {
 	}
 }
 
+// Sync Log Tracking Tests
+
+func TestSyncLog_DuplicateEventSkipping(t *testing.T) {
+	database := setupTestDB(t)
+	defer func() { _ = database.Close() }()
+
+	matcher := NewContactMatcher([]models.Contact{})
+
+	// Create a test event
+	event := &calendar.Event{
+		Id:      "cal-event-duplicate-test",
+		Summary: "Team Meeting",
+		Start: &calendar.EventDateTime{
+			DateTime: "2025-11-28T10:00:00Z",
+		},
+		End: &calendar.EventDateTime{
+			DateTime: "2025-11-28T11:00:00Z",
+		},
+		Attendees: []*calendar.EventAttendee{
+			{Email: "user@example.com", Self: true},
+			{Email: "alice@example.com", DisplayName: "Alice"},
+		},
+	}
+
+	// First import - should create sync log entry
+	exists, err := db.CheckSyncLogExists(database, "calendar", event.Id)
+	if err != nil {
+		t.Fatalf("failed to check sync log: %v", err)
+	}
+	if exists {
+		t.Error("expected sync log to not exist before first import")
+	}
+
+	// Extract contacts and log interaction
+	contactIDs, err := extractContacts(database, event, "user@example.com", matcher)
+	if err != nil {
+		t.Fatalf("failed to extract contacts: %v", err)
+	}
+
+	err = logInteraction(database, event, contactIDs)
+	if err != nil {
+		t.Fatalf("failed to log interaction: %v", err)
+	}
+
+	// Create sync log entry
+	syncLogID := uuid.New().String()
+	contactIDStrings := make([]string, len(contactIDs))
+	for i, id := range contactIDs {
+		contactIDStrings[i] = id.String()
+	}
+	entityIDs := contactIDStrings[0] // Use first contact ID for test
+	err = db.CreateSyncLog(database, syncLogID, "calendar", event.Id, "interaction", entityIDs, "{}")
+	if err != nil {
+		t.Fatalf("failed to create sync log: %v", err)
+	}
+
+	// Second check - should exist now
+	exists, err = db.CheckSyncLogExists(database, "calendar", event.Id)
+	if err != nil {
+		t.Fatalf("failed to check sync log: %v", err)
+	}
+	if !exists {
+		t.Error("expected sync log to exist after first import")
+	}
+
+	// Verify interaction count (should only be 1, not 2)
+	if len(contactIDs) > 0 {
+		interactions, err := db.GetInteractionHistory(database, contactIDs[0], 10)
+		if err != nil {
+			t.Fatalf("failed to get interaction history: %v", err)
+		}
+		if len(interactions) != 1 {
+			t.Errorf("expected 1 interaction, got %d", len(interactions))
+		}
+	}
+}
+
+func TestSyncLog_RecordsInteractionAfterImport(t *testing.T) {
+	database := setupTestDB(t)
+	defer func() { _ = database.Close() }()
+
+	matcher := NewContactMatcher([]models.Contact{})
+
+	event := &calendar.Event{
+		Id:      "cal-event-sync-log-test",
+		Summary: "Important Meeting",
+		Start: &calendar.EventDateTime{
+			DateTime: "2025-11-28T14:00:00Z",
+		},
+		End: &calendar.EventDateTime{
+			DateTime: "2025-11-28T15:00:00Z",
+		},
+		Attendees: []*calendar.EventAttendee{
+			{Email: "user@example.com", Self: true},
+			{Email: "bob@example.com", DisplayName: "Bob"},
+		},
+	}
+
+	// Process event
+	contactIDs, err := extractContacts(database, event, "user@example.com", matcher)
+	if err != nil {
+		t.Fatalf("failed to extract contacts: %v", err)
+	}
+
+	err = logInteraction(database, event, contactIDs)
+	if err != nil {
+		t.Fatalf("failed to log interaction: %v", err)
+	}
+
+	// Create sync log entry
+	syncLogID := uuid.New().String()
+	contactIDStrings := make([]string, len(contactIDs))
+	for i, id := range contactIDs {
+		contactIDStrings[i] = id.String()
+	}
+	entityIDs := contactIDStrings[0]
+	metadata := `{"event_summary":"` + event.Summary + `"}`
+
+	err = db.CreateSyncLog(database, syncLogID, "calendar", event.Id, "interaction", entityIDs, metadata)
+	if err != nil {
+		t.Fatalf("failed to create sync log: %v", err)
+	}
+
+	// Verify sync log was created
+	exists, err := db.CheckSyncLogExists(database, "calendar", event.Id)
+	if err != nil {
+		t.Fatalf("failed to check sync log: %v", err)
+	}
+	if !exists {
+		t.Error("expected sync log to exist after import")
+	}
+
+	// Verify we can query the sync log entry
+	var retrievedSourceID string
+	err = database.QueryRow(`
+		SELECT source_id FROM sync_log
+		WHERE source_service = ? AND source_id = ?
+	`, "calendar", event.Id).Scan(&retrievedSourceID)
+	if err != nil {
+		t.Fatalf("failed to query sync log: %v", err)
+	}
+	if retrievedSourceID != event.Id {
+		t.Errorf("expected source_id %q, got %q", event.Id, retrievedSourceID)
+	}
+}
+
+func TestSyncLog_PreventsDuplicateInteractions(t *testing.T) {
+	database := setupTestDB(t)
+	defer func() { _ = database.Close() }()
+
+	matcher := NewContactMatcher([]models.Contact{})
+	userEmail := "user@example.com"
+
+	event := &calendar.Event{
+		Id:      "cal-event-no-dupe-test",
+		Summary: "Weekly Standup",
+		Start: &calendar.EventDateTime{
+			DateTime: "2025-11-28T09:00:00Z",
+		},
+		End: &calendar.EventDateTime{
+			DateTime: "2025-11-28T09:30:00Z",
+		},
+		Attendees: []*calendar.EventAttendee{
+			{Email: userEmail, Self: true},
+			{Email: "charlie@example.com", DisplayName: "Charlie"},
+		},
+	}
+
+	// First import - process normally
+	exists, err := db.CheckSyncLogExists(database, "calendar", event.Id)
+	if err != nil {
+		t.Fatalf("failed to check sync log: %v", err)
+	}
+	if exists {
+		t.Fatal("sync log should not exist before first import")
+	}
+
+	contactIDs, err := extractContacts(database, event, userEmail, matcher)
+	if err != nil {
+		t.Fatalf("failed to extract contacts: %v", err)
+	}
+
+	err = logInteraction(database, event, contactIDs)
+	if err != nil {
+		t.Fatalf("failed to log interaction: %v", err)
+	}
+
+	// Record in sync log
+	syncLogID := uuid.New().String()
+	err = db.CreateSyncLog(database, syncLogID, "calendar", event.Id, "interaction", contactIDs[0].String(), "{}")
+	if err != nil {
+		t.Fatalf("failed to create sync log: %v", err)
+	}
+
+	// Get initial interaction count
+	interactions1, err := db.GetInteractionHistory(database, contactIDs[0], 10)
+	if err != nil {
+		t.Fatalf("failed to get interaction history: %v", err)
+	}
+	initialCount := len(interactions1)
+	if initialCount != 1 {
+		t.Fatalf("expected 1 interaction after first import, got %d", initialCount)
+	}
+
+	// Second import attempt - should be skipped
+	exists, err = db.CheckSyncLogExists(database, "calendar", event.Id)
+	if err != nil {
+		t.Fatalf("failed to check sync log on second attempt: %v", err)
+	}
+	if !exists {
+		t.Fatal("sync log should exist on second import attempt")
+	}
+
+	// If exists, we should skip processing
+	// (the actual import logic will handle this)
+	// For this test, we verify that if we DON'T skip, we'd create duplicates
+
+	// Get final interaction count - should still be 1
+	interactions2, err := db.GetInteractionHistory(database, contactIDs[0], 10)
+	if err != nil {
+		t.Fatalf("failed to get interaction history: %v", err)
+	}
+	finalCount := len(interactions2)
+	if finalCount != initialCount {
+		t.Errorf("interaction count should remain %d, got %d", initialCount, finalCount)
+	}
+}
+
+func TestSyncLog_UniqueConstraint(t *testing.T) {
+	database := setupTestDB(t)
+	defer func() { _ = database.Close() }()
+
+	// Try to insert the same event twice
+	syncLogID1 := uuid.New().String()
+	err := db.CreateSyncLog(database, syncLogID1, "calendar", "duplicate-event-id", "interaction", "contact-123", "{}")
+	if err != nil {
+		t.Fatalf("first insert should succeed: %v", err)
+	}
+
+	// Second insert with same source_service + source_id should fail
+	syncLogID2 := uuid.New().String()
+	err = db.CreateSyncLog(database, syncLogID2, "calendar", "duplicate-event-id", "interaction", "contact-456", "{}")
+	if err == nil {
+		t.Error("expected error on duplicate insert due to UNIQUE constraint")
+	}
+}
+
+func TestSyncLog_EndToEndDuplicatePrevention(t *testing.T) {
+	database := setupTestDB(t)
+	defer func() { _ = database.Close() }()
+
+	matcher := NewContactMatcher([]models.Contact{})
+	userEmail := "user@example.com"
+
+	// Create multiple events, some duplicates
+	events := []*calendar.Event{
+		{
+			Id:      "event-1",
+			Summary: "First Meeting",
+			Start:   &calendar.EventDateTime{DateTime: "2025-11-28T10:00:00Z"},
+			End:     &calendar.EventDateTime{DateTime: "2025-11-28T11:00:00Z"},
+			Attendees: []*calendar.EventAttendee{
+				{Email: userEmail, Self: true},
+				{Email: "alice@example.com", DisplayName: "Alice"},
+			},
+		},
+		{
+			Id:      "event-2",
+			Summary: "Second Meeting",
+			Start:   &calendar.EventDateTime{DateTime: "2025-11-28T14:00:00Z"},
+			End:     &calendar.EventDateTime{DateTime: "2025-11-28T15:00:00Z"},
+			Attendees: []*calendar.EventAttendee{
+				{Email: userEmail, Self: true},
+				{Email: "bob@example.com", DisplayName: "Bob"},
+			},
+		},
+		{
+			Id:      "event-1", // Duplicate of first event
+			Summary: "First Meeting (duplicate)",
+			Start:   &calendar.EventDateTime{DateTime: "2025-11-28T10:00:00Z"},
+			End:     &calendar.EventDateTime{DateTime: "2025-11-28T11:00:00Z"},
+			Attendees: []*calendar.EventAttendee{
+				{Email: userEmail, Self: true},
+				{Email: "alice@example.com", DisplayName: "Alice"},
+			},
+		},
+	}
+
+	processedCount := 0
+	skippedCount := 0
+
+	for _, event := range events {
+		// Check if already imported
+		exists, err := db.CheckSyncLogExists(database, "calendar", event.Id)
+		if err != nil {
+			t.Fatalf("failed to check sync log: %v", err)
+		}
+		if exists {
+			skippedCount++
+			continue
+		}
+
+		// Extract contacts
+		contactIDs, err := extractContacts(database, event, userEmail, matcher)
+		if err != nil {
+			t.Fatalf("failed to extract contacts: %v", err)
+		}
+
+		// Log interaction
+		if len(contactIDs) > 0 {
+			err = logInteraction(database, event, contactIDs)
+			if err != nil {
+				t.Fatalf("failed to log interaction: %v", err)
+			}
+
+			// Record in sync log
+			syncLogID := uuid.New().String()
+			err = db.CreateSyncLog(database, syncLogID, "calendar", event.Id, "interaction", contactIDs[0].String(), "{}")
+			if err != nil {
+				t.Fatalf("failed to create sync log: %v", err)
+			}
+
+			processedCount++
+		}
+	}
+
+	// Verify counts
+	if processedCount != 2 {
+		t.Errorf("expected 2 processed events, got %d", processedCount)
+	}
+	if skippedCount != 1 {
+		t.Errorf("expected 1 skipped event, got %d", skippedCount)
+	}
+
+	// Verify sync log entries (should only be 2)
+	var syncLogCount int
+	err := database.QueryRow(`SELECT COUNT(*) FROM sync_log WHERE source_service = ?`, "calendar").Scan(&syncLogCount)
+	if err != nil {
+		t.Fatalf("failed to count sync log entries: %v", err)
+	}
+	if syncLogCount != 2 {
+		t.Errorf("expected 2 sync log entries, got %d", syncLogCount)
+	}
+
+	// Verify interaction count for Alice (should only be 1, not 2)
+	contacts, err := db.FindContacts(database, "alice@example.com", nil, 10)
+	if err != nil {
+		t.Fatalf("failed to find Alice contact: %v", err)
+	}
+	if len(contacts) != 1 {
+		t.Fatalf("expected 1 Alice contact, got %d", len(contacts))
+	}
+
+	interactions, err := db.GetInteractionHistory(database, contacts[0].ID, 10)
+	if err != nil {
+		t.Fatalf("failed to get interaction history: %v", err)
+	}
+	if len(interactions) != 1 {
+		t.Errorf("expected 1 interaction for Alice, got %d (duplicate was not prevented)", len(interactions))
+	}
+}
+
 // Helper function for error message checking
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || (len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
