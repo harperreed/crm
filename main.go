@@ -15,11 +15,15 @@ import (
 	"github.com/harperreed/pagen/db"
 	"github.com/harperreed/pagen/tui"
 	"github.com/harperreed/pagen/web"
+	"github.com/joho/godotenv"
 )
 
 const version = "0.1.3"
 
 func main() {
+	// Load .env file if it exists (ignore errors if not found)
+	_ = godotenv.Load()
+
 	// Global flags
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	showHelp := flag.Bool("help", false, "Show help and exit")
@@ -336,13 +340,17 @@ func main() {
 			if err := cli.SyncCalendarCommand(database, syncArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
+		case "gmail":
+			if err := cli.SyncGmailCommand(database, syncArgs); err != nil {
+				log.Fatalf("Error: %v", err)
+			}
 		case "reset":
 			if err := cli.SyncResetCommand(database, syncArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		default:
 			fmt.Printf("Unknown sync command: %s\n", syncCommand)
-			fmt.Println("Commands: init, contacts, calendar, reset, status, review")
+			fmt.Println("Commands: init, contacts, calendar, gmail, reset, status, review")
 			os.Exit(1)
 		}
 

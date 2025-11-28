@@ -136,6 +136,32 @@ func SyncCalendarCommand(database *sql.DB, args []string) error {
 	return nil
 }
 
+// SyncGmailCommand syncs Gmail emails
+func SyncGmailCommand(database *sql.DB, args []string) error {
+	fs := flag.NewFlagSet("gmail", flag.ExitOnError)
+	initial := fs.Bool("initial", false, "Import last 30 days")
+	_ = fs.Parse(args)
+
+	// Load OAuth token
+	token, err := sync.LoadToken()
+	if err != nil {
+		return fmt.Errorf("no authentication token found. Run 'pagen sync init' first: %w", err)
+	}
+
+	// Create Gmail client
+	client, err := sync.NewGmailClient(token)
+	if err != nil {
+		return fmt.Errorf("failed to create Gmail client: %w", err)
+	}
+
+	// Import emails
+	if err := sync.ImportGmail(database, client, *initial); err != nil {
+		return fmt.Errorf("gmail sync failed: %w", err)
+	}
+
+	return nil
+}
+
 // SyncResetCommand resets a stuck sync state
 func SyncResetCommand(database *sql.DB, args []string) error {
 	if len(args) == 0 {
