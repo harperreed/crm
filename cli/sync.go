@@ -85,6 +85,32 @@ func SyncInitCommand(database *sql.DB, args []string) error {
 	}
 }
 
+// SyncContactsCommand syncs Google Contacts
+func SyncContactsCommand(database *sql.DB, args []string) error {
+	fs := flag.NewFlagSet("contacts", flag.ExitOnError)
+	initial := fs.Bool("initial", false, "Full import (not incremental)")
+	_ = fs.Parse(args)
+
+	// TODO: Real Google API integration
+	// For now, just placeholder
+
+	fmt.Println("Syncing Google Contacts...")
+	fmt.Println("  → Fetching contacts...")
+
+	// Placeholder - will implement real API in next iteration
+	fmt.Println("  ✓ Google API integration pending")
+	fmt.Println("\nTo complete setup:")
+	fmt.Println("1. Enable Google People API in Cloud Console")
+	fmt.Println("2. Run 'pagen sync init' to authenticate")
+	fmt.Println("3. Re-run 'pagen sync contacts'")
+
+	if *initial {
+		fmt.Println("\nNote: --initial flag will be used for full import when API is integrated")
+	}
+
+	return nil
+}
+
 // openBrowser attempts to open URL in default browser
 func openBrowser(url string) error {
 	var cmd string

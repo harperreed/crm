@@ -328,6 +328,10 @@ func main() {
 			if err := cli.SyncInitCommand(database, syncArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
+		case "contacts":
+			if err := cli.SyncContactsCommand(database, syncArgs); err != nil {
+				log.Fatalf("Error: %v", err)
+			}
 		default:
 			fmt.Printf("Unknown sync command: %s\n", syncCommand)
 			fmt.Println("Commands: init, contacts, calendar, gmail, status, review")
