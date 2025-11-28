@@ -302,23 +302,33 @@ func extractContacts(database *sql.DB, event *calendar.Event, userEmail string, 
 }
 
 // calculateDuration calculates the duration in minutes between start and end times
-func calculateDuration(event *calendar.Event) int {
-	if event.Start == nil || event.End == nil {
-		return 0
+// Returns an error if times are invalid or end time is before start time
+func calculateDuration(event *calendar.Event) (int, error) {
+	if event.Start == nil {
+		return 0, fmt.Errorf("event start time is nil")
+	}
+	if event.End == nil {
+		return 0, fmt.Errorf("event end time is nil")
 	}
 
 	startTime, err := time.Parse(time.RFC3339, event.Start.DateTime)
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("failed to parse start time: %w", err)
 	}
 
 	endTime, err := time.Parse(time.RFC3339, event.End.DateTime)
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("failed to parse end time: %w", err)
 	}
 
 	duration := endTime.Sub(startTime)
-	return int(duration.Minutes())
+	durationMinutes := int(duration.Minutes())
+
+	if durationMinutes < 0 {
+		return 0, fmt.Errorf("end time before start time")
+	}
+
+	return durationMinutes, nil
 }
 
 // logInteraction creates interaction_log entries for all attendees/contacts from a calendar event
@@ -330,7 +340,12 @@ func logInteraction(database *sql.DB, event *calendar.Event, contactIDs []uuid.U
 	}
 
 	// Calculate duration
-	durationMinutes := calculateDuration(event)
+	durationMinutes, err := calculateDuration(event)
+	if err != nil {
+		// Log warning but continue with 0 duration
+		fmt.Printf("  ⚠ Warning: Failed to calculate duration for event %q: %v\n", event.Summary, err)
+		durationMinutes = 0
+	}
 
 	// Build metadata
 	metadata := map[string]interface{}{

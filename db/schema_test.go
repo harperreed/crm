@@ -101,3 +101,117 @@ func TestSchemaIncludesSyncTables(t *testing.T) {
 		}
 	}
 }
+
+func TestMigrateInteractionLogMetadata(t *testing.T) {
+	// Test migration adds metadata column when it doesn't exist
+
+	// Create a database with the old schema (without metadata column)
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("Failed to open in-memory db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	// Create interaction_log table WITHOUT metadata column
+	oldSchema := `
+	CREATE TABLE IF NOT EXISTS interaction_log (
+		id TEXT PRIMARY KEY,
+		contact_id TEXT NOT NULL,
+		interaction_type TEXT NOT NULL CHECK(interaction_type IN ('meeting', 'call', 'email', 'message', 'event')),
+		timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		notes TEXT,
+		sentiment TEXT CHECK(sentiment IN ('positive', 'neutral', 'negative'))
+	);
+	`
+	_, err = db.Exec(oldSchema)
+	if err != nil {
+		t.Fatalf("Failed to create old schema: %v", err)
+	}
+
+	// Verify metadata column doesn't exist
+	var count int
+	err = db.QueryRow(`
+		SELECT COUNT(*) FROM pragma_table_info('interaction_log')
+		WHERE name='metadata'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to check for metadata column: %v", err)
+	}
+	if count != 0 {
+		t.Fatal("metadata column should not exist before migration")
+	}
+
+	// Run migration
+	err = migrateInteractionLogMetadata(db)
+	if err != nil {
+		t.Fatalf("Migration failed: %v", err)
+	}
+
+	// Verify metadata column now exists
+	err = db.QueryRow(`
+		SELECT COUNT(*) FROM pragma_table_info('interaction_log')
+		WHERE name='metadata'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to check for metadata column after migration: %v", err)
+	}
+	if count != 1 {
+		t.Fatal("metadata column should exist after migration")
+	}
+
+	// Run migration again - should be idempotent
+	err = migrateInteractionLogMetadata(db)
+	if err != nil {
+		t.Fatalf("Migration should be idempotent but failed on second run: %v", err)
+	}
+
+	// Verify column still exists and count is still 1
+	err = db.QueryRow(`
+		SELECT COUNT(*) FROM pragma_table_info('interaction_log')
+		WHERE name='metadata'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to check for metadata column after second migration: %v", err)
+	}
+	if count != 1 {
+		t.Fatal("metadata column should still exist after second migration (idempotent)")
+	}
+}
+
+func TestMigrateInteractionLogMetadata_ExistingColumn(t *testing.T) {
+	// Test migration is idempotent when column already exists
+	database := setupTestDB(t)
+	defer func() { _ = database.Close() }()
+
+	// The setupTestDB already runs InitSchema which includes the metadata column
+	// Verify metadata column exists
+	var count int
+	err := database.QueryRow(`
+		SELECT COUNT(*) FROM pragma_table_info('interaction_log')
+		WHERE name='metadata'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to check for metadata column: %v", err)
+	}
+	if count != 1 {
+		t.Fatal("metadata column should exist in fresh schema")
+	}
+
+	// Run migration - should succeed without error
+	err = migrateInteractionLogMetadata(database)
+	if err != nil {
+		t.Fatalf("Migration should be idempotent but failed: %v", err)
+	}
+
+	// Verify column still exists (no duplicate)
+	err = database.QueryRow(`
+		SELECT COUNT(*) FROM pragma_table_info('interaction_log')
+		WHERE name='metadata'
+	`).Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to check for metadata column after migration: %v", err)
+	}
+	if count != 1 {
+		t.Fatal("metadata column should still exist with count of 1 (no duplicate)")
+	}
+}

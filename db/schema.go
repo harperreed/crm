@@ -148,5 +148,34 @@ CREATE INDEX IF NOT EXISTS idx_suggestions_type ON suggestions(type);
 
 func InitSchema(db *sql.DB) error {
 	_, err := db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Run migrations
+	if err := migrateInteractionLogMetadata(db); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// migrateInteractionLogMetadata adds the metadata column if it doesn't exist
+// This ensures users upgrading from Phase 1 can continue using the database
+func migrateInteractionLogMetadata(db *sql.DB) error {
+	// Check if column exists
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM pragma_table_info('interaction_log')
+		WHERE name='metadata'
+	`).Scan(&count)
+	if err != nil {
+		return err
+	}
+
+	if count == 0 {
+		_, err = db.Exec(`ALTER TABLE interaction_log ADD COLUMN metadata TEXT`)
+		return err
+	}
+	return nil
 }

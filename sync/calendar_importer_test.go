@@ -1329,3 +1329,224 @@ func TestLogInteraction_UpdatesCadence(t *testing.T) {
 		t.Error("expected next_followup_date to be set")
 	}
 }
+
+// Duration Calculation Tests
+
+func TestCalculateDuration_ValidEvents(t *testing.T) {
+	testCases := []struct {
+		name             string
+		startTime        string
+		endTime          string
+		expectedDuration int
+		expectError      bool
+	}{
+		{
+			name:             "30 minute meeting",
+			startTime:        "2025-11-28T10:00:00Z",
+			endTime:          "2025-11-28T10:30:00Z",
+			expectedDuration: 30,
+			expectError:      false,
+		},
+		{
+			name:             "1 hour meeting",
+			startTime:        "2025-11-28T14:00:00Z",
+			endTime:          "2025-11-28T15:00:00Z",
+			expectedDuration: 60,
+			expectError:      false,
+		},
+		{
+			name:             "90 minute meeting",
+			startTime:        "2025-11-28T09:00:00Z",
+			endTime:          "2025-11-28T10:30:00Z",
+			expectedDuration: 90,
+			expectError:      false,
+		},
+		{
+			name:             "2 hour meeting",
+			startTime:        "2025-11-28T13:00:00Z",
+			endTime:          "2025-11-28T15:00:00Z",
+			expectedDuration: 120,
+			expectError:      false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			event := &calendar.Event{
+				Start: &calendar.EventDateTime{
+					DateTime: tc.startTime,
+				},
+				End: &calendar.EventDateTime{
+					DateTime: tc.endTime,
+				},
+			}
+
+			duration, err := calculateDuration(event)
+
+			if tc.expectError && err == nil {
+				t.Error("expected error but got none")
+			}
+			if !tc.expectError && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if duration != tc.expectedDuration {
+				t.Errorf("expected duration %d, got %d", tc.expectedDuration, duration)
+			}
+		})
+	}
+}
+
+func TestCalculateDuration_ErrorCases(t *testing.T) {
+	testCases := []struct {
+		name        string
+		event       *calendar.Event
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "nil start time",
+			event: &calendar.Event{
+				Start: nil,
+				End: &calendar.EventDateTime{
+					DateTime: "2025-11-28T10:30:00Z",
+				},
+			},
+			expectError: true,
+			errorMsg:    "start time is nil",
+		},
+		{
+			name: "nil end time",
+			event: &calendar.Event{
+				Start: &calendar.EventDateTime{
+					DateTime: "2025-11-28T10:00:00Z",
+				},
+				End: nil,
+			},
+			expectError: true,
+			errorMsg:    "end time is nil",
+		},
+		{
+			name: "invalid start time format",
+			event: &calendar.Event{
+				Start: &calendar.EventDateTime{
+					DateTime: "not-a-valid-time",
+				},
+				End: &calendar.EventDateTime{
+					DateTime: "2025-11-28T10:30:00Z",
+				},
+			},
+			expectError: true,
+			errorMsg:    "failed to parse start time",
+		},
+		{
+			name: "invalid end time format",
+			event: &calendar.Event{
+				Start: &calendar.EventDateTime{
+					DateTime: "2025-11-28T10:00:00Z",
+				},
+				End: &calendar.EventDateTime{
+					DateTime: "invalid-time",
+				},
+			},
+			expectError: true,
+			errorMsg:    "failed to parse end time",
+		},
+		{
+			name: "negative duration (end before start)",
+			event: &calendar.Event{
+				Start: &calendar.EventDateTime{
+					DateTime: "2025-11-28T10:30:00Z",
+				},
+				End: &calendar.EventDateTime{
+					DateTime: "2025-11-28T10:00:00Z",
+				},
+			},
+			expectError: true,
+			errorMsg:    "end time before start time",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			duration, err := calculateDuration(tc.event)
+
+			if tc.expectError && err == nil {
+				t.Error("expected error but got none")
+			}
+			if !tc.expectError && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if tc.expectError && err != nil {
+				if tc.errorMsg != "" && !contains(err.Error(), tc.errorMsg) {
+					t.Errorf("expected error to contain %q, got %q", tc.errorMsg, err.Error())
+				}
+				if duration != 0 {
+					t.Errorf("expected duration 0 on error, got %d", duration)
+				}
+			}
+		})
+	}
+}
+
+func TestLogInteraction_HandlesInvalidDuration(t *testing.T) {
+	database := setupTestDB(t)
+	defer func() { _ = database.Close() }()
+
+	contact := &models.Contact{Name: "Alice", Email: "alice@example.com"}
+	if err := db.CreateContact(database, contact); err != nil {
+		t.Fatalf("failed to create contact: %v", err)
+	}
+
+	// Event with invalid duration (end before start)
+	event := &calendar.Event{
+		Id:      "event1",
+		Summary: "Invalid Duration Event",
+		Start: &calendar.EventDateTime{
+			DateTime: "2025-11-28T11:00:00Z",
+		},
+		End: &calendar.EventDateTime{
+			DateTime: "2025-11-28T10:00:00Z", // Before start
+		},
+		Attendees: []*calendar.EventAttendee{
+			{Email: "alice@example.com"},
+		},
+	}
+
+	// Should not fail - should log interaction with 0 duration
+	err := logInteraction(database, event, []uuid.UUID{contact.ID})
+	if err != nil {
+		t.Fatalf("logInteraction should not fail on invalid duration: %v", err)
+	}
+
+	// Verify interaction was created with 0 duration
+	var metadataJSON string
+	query := `SELECT metadata FROM interaction_log WHERE contact_id = ?`
+	err = database.QueryRow(query, contact.ID.String()).Scan(&metadataJSON)
+	if err != nil {
+		t.Fatalf("failed to query metadata: %v", err)
+	}
+
+	var metadata map[string]interface{}
+	if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil {
+		t.Fatalf("failed to parse metadata JSON: %v", err)
+	}
+
+	duration := int(metadata["duration_minutes"].(float64))
+	if duration != 0 {
+		t.Errorf("expected duration 0 for invalid event, got %d", duration)
+	}
+}
+
+// Helper function for error message checking
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || (len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
