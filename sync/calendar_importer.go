@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"google.golang.org/api/calendar/v3"
+	"google.golang.org/api/googleapi"
 
 	"github.com/harperreed/pagen/db"
 )
@@ -67,16 +68,46 @@ func ImportCalendar(database *sql.DB, client *calendar.Service, initial bool) er
 
 		events, err := call.Do()
 		if err != nil {
-			errMsg := fmt.Sprintf("failed to fetch events: %v", err)
-			_ = db.UpdateSyncStatus(database, calendarService, "error", &errMsg)
-			return fmt.Errorf("failed to fetch calendar events: %w", err)
+			// Handle 410 Gone error (invalid sync token)
+			if apiErr, ok := err.(*googleapi.Error); ok && apiErr.Code == 410 {
+				fmt.Println("  → Sync token invalid, falling back to time-based sync...")
+
+				// Fall back to time-based sync using last sync time or 6 months ago
+				var fallbackTime time.Time
+				if state != nil && state.LastSyncTime != nil {
+					fallbackTime = *state.LastSyncTime
+				} else {
+					fallbackTime = time.Now().AddDate(0, -6, 0)
+				}
+
+				// Rebuild call with timeMin instead of sync token and reset pagination
+				call = client.Events.List("primary").
+					MaxResults(maxResults).
+					SingleEvents(true).
+					OrderBy("startTime").
+					TimeMin(fallbackTime.Format(time.RFC3339))
+				totalEvents = 0
+
+				// Retry the call
+				events, err = call.Do()
+				if err != nil {
+					errMsg := fmt.Sprintf("failed to fetch events after fallback: %v", err)
+					_ = db.UpdateSyncStatus(database, calendarService, "error", &errMsg)
+					return fmt.Errorf("failed to fetch calendar events after fallback: %w", err)
+				}
+			} else {
+				errMsg := fmt.Sprintf("failed to fetch events: %v", err)
+				_ = db.UpdateSyncStatus(database, calendarService, "error", &errMsg)
+				return fmt.Errorf("failed to fetch calendar events: %w", err)
+			}
 		}
 
 		eventCount := len(events.Items)
 		totalEvents += eventCount
 
 		if eventCount > 0 {
-			fmt.Printf("  → Fetched %d events (page %d)\n", eventCount, (totalEvents / eventCount))
+			pageNum := (totalEvents-eventCount)/maxResults + 1
+			fmt.Printf("  → Fetched %d events (page %d)\n", eventCount, pageNum)
 		}
 
 		// Check for next page

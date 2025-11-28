@@ -2,24 +2,10 @@
 package sync
 
 import (
-	"database/sql"
 	"testing"
 
 	"github.com/harperreed/pagen/db"
 )
-
-func setupTestDB(t *testing.T) *sql.DB {
-	database, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := db.InitSchema(database); err != nil {
-		t.Fatal(err)
-	}
-
-	return database
-}
 
 func TestContactsImporterCreate(t *testing.T) {
 	database := setupTestDB(t)

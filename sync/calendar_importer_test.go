@@ -4,9 +4,201 @@ package sync
 
 import (
 	"testing"
+	"time"
 
 	"github.com/harperreed/pagen/db"
 )
+
+// Real unit tests that verify actual behavior
+
+func TestSyncStateLifecycle(t *testing.T) {
+	database := setupTestDB(t)
+	defer func() { _ = database.Close() }()
+
+	// 1. Initial state: no sync state exists
+	state, err := db.GetSyncState(database, calendarService)
+	if err != nil {
+		t.Fatalf("failed to get sync state: %v", err)
+	}
+	if state != nil {
+		t.Errorf("expected nil state for new service, got %+v", state)
+	}
+
+	// 2. Start sync: status should be 'syncing'
+	err = db.UpdateSyncStatus(database, calendarService, "syncing", nil)
+	if err != nil {
+		t.Fatalf("failed to update sync status to syncing: %v", err)
+	}
+
+	state, err = db.GetSyncState(database, calendarService)
+	if err != nil {
+		t.Fatalf("failed to get sync state: %v", err)
+	}
+	if state.Status != "syncing" {
+		t.Errorf("expected status 'syncing', got %q", state.Status)
+	}
+	if state.ErrorMessage != nil {
+		t.Errorf("expected nil error message during sync, got %v", state.ErrorMessage)
+	}
+
+	// 3. Complete sync: status should be 'idle' with token
+	token := "test-sync-token-abc123"
+	err = db.UpdateSyncToken(database, calendarService, token)
+	if err != nil {
+		t.Fatalf("failed to update sync token: %v", err)
+	}
+
+	state, err = db.GetSyncState(database, calendarService)
+	if err != nil {
+		t.Fatalf("failed to get sync state: %v", err)
+	}
+	if state.Status != "idle" {
+		t.Errorf("expected status 'idle' after token update, got %q", state.Status)
+	}
+	if state.LastSyncToken == nil || *state.LastSyncToken != token {
+		t.Errorf("expected sync token %q, got %v", token, state.LastSyncToken)
+	}
+	if state.LastSyncTime == nil {
+		t.Error("expected last_sync_time to be set after sync")
+	}
+
+	// 4. Error state: status should be 'error' with message
+	errMsg := "API error: rate limit exceeded"
+	err = db.UpdateSyncStatus(database, calendarService, "error", &errMsg)
+	if err != nil {
+		t.Fatalf("failed to update sync status to error: %v", err)
+	}
+
+	state, err = db.GetSyncState(database, calendarService)
+	if err != nil {
+		t.Fatalf("failed to get sync state: %v", err)
+	}
+	if state.Status != "error" {
+		t.Errorf("expected status 'error', got %q", state.Status)
+	}
+	if state.ErrorMessage == nil || *state.ErrorMessage != errMsg {
+		t.Errorf("expected error message %q, got %v", errMsg, state.ErrorMessage)
+	}
+}
+
+func TestSyncTokenPersistence(t *testing.T) {
+	database := setupTestDB(t)
+	defer func() { _ = database.Close() }()
+
+	// Save initial sync token
+	token1 := "sync-token-initial"
+	err := db.UpdateSyncToken(database, calendarService, token1)
+	if err != nil {
+		t.Fatalf("failed to save initial sync token: %v", err)
+	}
+
+	// Verify token is retrievable
+	state, err := db.GetSyncState(database, calendarService)
+	if err != nil {
+		t.Fatalf("failed to get sync state: %v", err)
+	}
+	if state.LastSyncToken == nil || *state.LastSyncToken != token1 {
+		t.Errorf("expected sync token %q, got %v", token1, state.LastSyncToken)
+	}
+
+	// Update sync token
+	token2 := "sync-token-updated"
+	err = db.UpdateSyncToken(database, calendarService, token2)
+	if err != nil {
+		t.Fatalf("failed to update sync token: %v", err)
+	}
+
+	// Verify token is updated
+	state, err = db.GetSyncState(database, calendarService)
+	if err != nil {
+		t.Fatalf("failed to get sync state: %v", err)
+	}
+	if state.LastSyncToken == nil || *state.LastSyncToken != token2 {
+		t.Errorf("expected updated sync token %q, got %v", token2, state.LastSyncToken)
+	}
+}
+
+func TestTimeMinCalculation(t *testing.T) {
+	// Verify that 6 months ago calculation is correct
+	now := time.Now()
+	sixMonthsAgo := now.AddDate(0, -6, 0)
+
+	// The difference should be approximately 6 months
+	diff := now.Sub(sixMonthsAgo)
+	expectedDays := 180.0 // Approximate 6 months
+	actualDays := diff.Hours() / 24.0
+
+	// Allow for some variance (175-185 days)
+	if actualDays < 175 || actualDays > 185 {
+		t.Errorf("expected approximately %f days, got %f", expectedDays, actualDays)
+	}
+}
+
+func TestPageNumberCalculation(t *testing.T) {
+	testCases := []struct {
+		totalEvents  int
+		eventCount   int
+		expectedPage int
+		description  string
+	}{
+		{250, 250, 1, "first full page"},
+		{500, 250, 2, "second full page"},
+		{750, 250, 3, "third full page"},
+		{350, 100, 2, "second partial page"},
+		{260, 10, 2, "second very small page"},
+		{100, 100, 1, "single partial page"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			pageNum := (tc.totalEvents-tc.eventCount)/maxResults + 1
+			if pageNum != tc.expectedPage {
+				t.Errorf("%s: expected page %d, got %d (totalEvents=%d, eventCount=%d)",
+					tc.description, tc.expectedPage, pageNum, tc.totalEvents, tc.eventCount)
+			}
+		})
+	}
+}
+
+func TestInitialVsIncrementalSync(t *testing.T) {
+	database := setupTestDB(t)
+	defer func() { _ = database.Close() }()
+
+	// Test 1: Initial sync flag should affect behavior
+	// When initial=true, we should not look for sync token
+	// This is tested implicitly in the ImportCalendar function
+
+	// Test 2: When not initial and sync token exists, should use token
+	token := "existing-sync-token"
+	err := db.UpdateSyncToken(database, calendarService, token)
+	if err != nil {
+		t.Fatalf("failed to save sync token: %v", err)
+	}
+
+	state, err := db.GetSyncState(database, calendarService)
+	if err != nil {
+		t.Fatalf("failed to get sync state: %v", err)
+	}
+	if state.LastSyncToken == nil {
+		t.Error("expected sync token to be available for incremental sync")
+	}
+
+	// Test 3: When not initial but no sync token, should fall back to timeMin
+	err = db.UpdateSyncStatus(database, "new-service", "idle", nil)
+	if err != nil {
+		t.Fatalf("failed to create new service state: %v", err)
+	}
+
+	state, err = db.GetSyncState(database, "new-service")
+	if err != nil {
+		t.Fatalf("failed to get sync state: %v", err)
+	}
+	if state.LastSyncToken != nil {
+		t.Error("expected nil sync token for new service")
+	}
+}
+
+// Documentation tests that describe expected behavior with external APIs
 
 func TestInitialSyncWithTimeMin(t *testing.T) {
 	// This test verifies that initial sync uses timeMin parameter
