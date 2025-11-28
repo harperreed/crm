@@ -33,3 +33,6 @@ pagen
 # Scenario scratch files (temporary test programs)
 .scratch/
 scratch/
+
+# Worktrees
+.worktrees/
