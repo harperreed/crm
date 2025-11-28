@@ -290,17 +290,26 @@ Visit `/followups` for:
 
 ## Google Sync
 
-**Phase 1 Foundation** - Import contacts from Google Contacts into your local CRM database.
-
-Pagen can sync your Google Contacts directly into the local SQLite database, creating a unified contact management experience. This foundation enables future features like bidirectional sync, automated updates, and relationship mapping.
+Pagen syncs both **Contacts** and **Calendar** data from Google into your local CRM database, creating a unified contact and interaction management experience.
 
 ### Features
 
+**Contacts Sync:**
 - **One-Time OAuth Setup** - Authenticate with Google using industry-standard OAuth 2.0 flow
 - **Selective Import** - Import all contacts or just recent ones (last 6 months)
 - **Smart Mapping** - Maps Google contact fields to pagen's schema (names, emails, phones, companies)
+- **Duplicate Prevention** - Won't create duplicate contacts
+
+**Calendar Sync:**
+- **Incremental Sync** - Only fetches new/changed events using sync tokens
+- **Automatic Interaction Logging** - Meeting attendees become contacts with logged interactions
+- **Smart Filtering** - Skips irrelevant events (all-day, declined, solo, cancelled)
+- **Cadence Tracking** - Auto-updates contact follow-up cadences based on interactions
+- **Initial Sync** - Import last 6 months of calendar history
+
+**Shared Features:**
 - **XDG-Compliant Storage** - Credentials stored securely in `~/.local/share/pagen/`
-- **Duplicate Prevention** - Won't create duplicate contacts (Phase 1 doesn't update existing)
+- **Combined Sync** - Run both contacts and calendar in one command
 
 ### Setup Instructions
 
@@ -308,10 +317,10 @@ Pagen can sync your Google Contacts directly into the local SQLite database, cre
 
 1. Visit the [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project (or select an existing one)
-3. Enable the **Google People API**:
+3. Enable the required APIs:
    - Navigate to "APIs & Services" > "Library"
-   - Search for "Google People API"
-   - Click "Enable"
+   - Search for and enable **Google People API** (for contacts)
+   - Search for and enable **Google Calendar API** (for calendar)
 
 #### 2. Create OAuth 2.0 Credentials
 
@@ -351,7 +360,7 @@ This will:
 
 **Note:** The OAuth flow uses `http://localhost:8080` as the redirect URI. Make sure this port is available.
 
-#### Import Contacts
+#### Sync Contacts
 
 After initialization, import your Google Contacts:
 
@@ -369,27 +378,123 @@ The import will:
 - Extract company names from organization fields
 - Create company records if they don't exist
 - Link contacts to companies
-- Skip contacts that already exist (based on name matching in Phase 1)
+- Skip contacts that already exist (based on name matching)
+
+#### Sync Calendar
+
+Sync your Google Calendar to automatically log interactions with contacts:
+
+```bash
+# Incremental sync - fetch only new/changed events since last sync
+pagen sync calendar
+
+# Initial sync - import last 6 months of calendar history
+pagen sync calendar --initial
+```
+
+Example output (initial sync):
+
+```
+Syncing Google Calendar (last 6 months)...
+  → Fetching events...
+  ✓ Fetched 156 events
+  ✓ Skipped 23 all-day events
+  ✓ Skipped 8 declined events
+  ✓ Skipped 12 solo events
+
+  → Processing 113 meetings...
+  ✓ Created 47 new contacts from attendees
+  ✓ Logged 113 interactions
+
+Summary:
+  New contacts: 47
+  Interactions: 113 logged
+
+Sync token saved. Next sync will be incremental.
+```
+
+Example output (incremental sync):
+
+```
+Syncing Google Calendar...
+  ✓ 3 new events since last sync
+  ✓ 1 updated event
+  ✓ Logged 4 interactions
+
+All up to date!
+```
+
+**Event Filtering Rules:**
+
+Calendar sync intelligently filters events to focus on meaningful interactions:
+
+- **Skips All-Day Events** - Daily events like holidays, birthdays, reminders
+- **Skips Declined Events** - Meetings you declined won't create interactions
+- **Skips Solo Events** - Events with 0-1 attendees (you alone)
+- **Skips Cancelled Events** - Cancelled meetings are ignored
+
+Only multi-person meetings you accepted or tentatively accepted are imported.
+
+**What Happens During Sync:**
+
+1. **Fetch Events** - Downloads events from Google Calendar API
+2. **Filter Events** - Applies filtering rules (see above)
+3. **Create Contacts** - Meeting attendees become contacts if they don't exist
+4. **Log Interactions** - Creates interaction records with meeting timestamps
+5. **Update Cadences** - Adjusts follow-up schedules based on interaction history
+6. **Save Sync Token** - Stores incremental sync state for next run
+
+#### Combined Sync
+
+Sync both contacts and calendar in one command:
+
+```bash
+pagen sync
+```
+
+Example output:
+
+```
+Syncing Google Contacts...
+  ✓ No changes since last sync
+
+Syncing Google Calendar...
+  ✓ 3 new events
+  ✓ Logged 3 interactions
+
+Summary:
+  Interactions: 3 logged
+
+All up to date!
+```
 
 ### Storage Locations
 
 - **OAuth Tokens:** `~/.local/share/pagen/google-credentials.json`
 - **CRM Database:** `~/.local/share/pagen/pagen.db`
+- **Sync State:** Stored in database `sync_state` table
 
-Both paths follow XDG Base Directory specifications.
+All paths follow XDG Base Directory specifications.
 
-### Phase 1 Limitations
+### Current Limitations
 
 This is the foundation layer for Google integration. Current limitations:
 
+**Contacts:**
 - **Import Only** - No bidirectional sync (updates in pagen don't sync back to Google)
 - **No Update Detection** - Won't update existing contacts with changes from Google
-- **Manual Sync** - No automatic background sync (run `sync contacts` manually)
 - **Simple Matching** - Uses name-based duplicate detection
 
-Future phases will add bidirectional sync, automated updates, relationship syncing, and more sophisticated conflict resolution.
+**Calendar:**
+- **Read-Only** - Calendar events are imported, not modified in Google
+- **Manual Sync** - No automatic background sync (run commands manually)
+- **Basic Filtering** - Simple event type filtering (no content analysis)
+
+Future phases will add bidirectional sync, automated updates, relationship syncing, deal detection, and more sophisticated conflict resolution.
 
 ### Troubleshooting
+
+#### General Issues
 
 **"Missing environment variables" error:**
 - Verify `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set: `env | grep GOOGLE`
@@ -400,8 +505,34 @@ Future phases will add bidirectional sync, automated updates, relationship synci
 **Port 8080 already in use:**
 - Stop any services using port 8080, or wait for the OAuth flow to use a random available port
 
+#### Contacts Issues
+
 **"API not enabled" error:**
 - Ensure Google People API is enabled in your Google Cloud Console project
+- Visit: https://console.cloud.google.com/apis/library/people.googleapis.com
+
+#### Calendar Issues
+
+**"Google Calendar API not enabled" error:**
+- Calendar API must be enabled in Google Cloud Console
+- Visit: https://console.cloud.google.com/apis/library/calendar-json.googleapis.com
+- Click "Enable" and try syncing again
+
+**"Sync token expired" warning:**
+- This happens if you deleted events or haven't synced in a long time
+- The sync will automatically fall back to time-based incremental sync
+- No action needed - the sync will continue normally
+
+**"No events imported" (all events skipped):**
+- Check the event filtering rules above
+- Verify you have multi-person meetings (not solo events)
+- Ensure events aren't all-day, declined, or cancelled
+- Try `--initial` flag to see detailed filtering stats
+
+**"Failed to fetch calendar events" network error:**
+- Check your internet connection
+- The sync will automatically retry (3 attempts)
+- If it persists, check Google Cloud Console API quotas
 
 ## Database
 
