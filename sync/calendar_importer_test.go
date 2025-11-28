@@ -1899,6 +1899,109 @@ func TestSyncLog_EndToEndDuplicatePrevention(t *testing.T) {
 	}
 }
 
+func TestSyncLog_HandlesSpecialCharactersInMetadata(t *testing.T) {
+	database := setupTestDB(t)
+	defer func() { _ = database.Close() }()
+
+	matcher := NewContactMatcher([]models.Contact{})
+	userEmail := "user@example.com"
+
+	// Test events with special characters in summary
+	testCases := []struct {
+		name    string
+		summary string
+	}{
+		{
+			name:    "quotes",
+			summary: `Meeting about "Project Alpha"`,
+		},
+		{
+			name:    "backslashes",
+			summary: `C:\Users\Documents\Report`,
+		},
+		{
+			name:    "newlines",
+			summary: "Line 1\nLine 2\nLine 3",
+		},
+		{
+			name:    "unicode",
+			summary: "Meeting with café ☕ discussion",
+		},
+		{
+			name:    "mixed special chars",
+			summary: `"Test" & 'Demo' with \backslash\ and {braces}`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			event := &calendar.Event{
+				Id:      "event-special-" + tc.name,
+				Summary: tc.summary,
+				Start: &calendar.EventDateTime{
+					DateTime: "2025-11-28T10:00:00Z",
+				},
+				End: &calendar.EventDateTime{
+					DateTime: "2025-11-28T11:00:00Z",
+				},
+				Attendees: []*calendar.EventAttendee{
+					{Email: userEmail, Self: true},
+					{Email: "alice@example.com", DisplayName: "Alice"},
+				},
+			}
+
+			// Extract contacts
+			contactIDs, err := extractContacts(database, event, userEmail, matcher)
+			if err != nil {
+				t.Fatalf("failed to extract contacts: %v", err)
+			}
+
+			// Log interaction
+			err = logInteraction(database, event, contactIDs)
+			if err != nil {
+				t.Fatalf("failed to log interaction: %v", err)
+			}
+
+			// Build metadata using proper JSON marshaling (same as production code)
+			metadataMap := map[string]string{"event_summary": event.Summary}
+			metadataBytes, err := json.Marshal(metadataMap)
+			if err != nil {
+				t.Fatalf("failed to marshal metadata: %v", err)
+			}
+			metadata := string(metadataBytes)
+
+			// Create sync log entry
+			syncLogID := uuid.New().String()
+			err = db.CreateSyncLog(database, syncLogID, "calendar", event.Id, "interaction", contactIDs[0].String(), metadata)
+			if err != nil {
+				t.Fatalf("failed to create sync log with special characters: %v", err)
+			}
+
+			// Verify we can retrieve and parse the metadata
+			var retrievedMetadata string
+			err = database.QueryRow(`
+				SELECT metadata FROM sync_log
+				WHERE source_service = ? AND source_id = ?
+			`, "calendar", event.Id).Scan(&retrievedMetadata)
+			if err != nil {
+				t.Fatalf("failed to retrieve metadata: %v", err)
+			}
+
+			// Parse retrieved metadata
+			var parsedMetadata map[string]string
+			err = json.Unmarshal([]byte(retrievedMetadata), &parsedMetadata)
+			if err != nil {
+				t.Fatalf("failed to parse retrieved metadata: %v", err)
+			}
+
+			// Verify event summary matches exactly
+			if parsedMetadata["event_summary"] != tc.summary {
+				t.Errorf("expected event_summary %q, got %q", tc.summary, parsedMetadata["event_summary"])
+			}
+		})
+	}
+}
+
 // Helper function for error message checking
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || (len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))

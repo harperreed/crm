@@ -19,6 +19,9 @@ import (
 const (
 	calendarService = "calendar"
 	maxResults      = 250 // Google Calendar API max per page
+
+	// Skip reasons for event filtering
+	skipReasonAlreadyImported = "already imported"
 )
 
 // shouldSkipEvent determines if an event should be skipped during import
@@ -201,7 +204,7 @@ func ImportCalendar(database *sql.DB, client *calendar.Service, initial bool) er
 				continue
 			}
 			if exists {
-				skipCounts["already imported"]++
+				skipCounts[skipReasonAlreadyImported]++
 				continue
 			}
 
@@ -223,8 +226,20 @@ func ImportCalendar(database *sql.DB, client *calendar.Service, initial bool) er
 
 				// Record in sync log after successful import
 				syncLogID := uuid.New().String()
-				entityID := contactIDs[0].String() // Use first contact ID
-				metadata := fmt.Sprintf(`{"event_summary":"%s"}`, event.Summary)
+				// Use first contact ID as entity_id for the sync_log entry.
+				// This links the event to one representative contact for tracking purposes.
+				// The event's interactions are still created for all attendees.
+				entityID := contactIDs[0].String()
+
+				// Build metadata using proper JSON marshaling to handle special characters
+				metadataMap := map[string]string{"event_summary": event.Summary}
+				metadataBytes, err := json.Marshal(metadataMap)
+				if err != nil {
+					fmt.Printf("  ✗ Failed to marshal metadata for event %q: %v\n", event.Summary, err)
+					continue
+				}
+				metadata := string(metadataBytes)
+
 				if err := db.CreateSyncLog(database, syncLogID, calendarService, event.Id, "interaction", entityID, metadata); err != nil {
 					// Log error but continue processing other events
 					fmt.Printf("  ✗ Failed to create sync log for event %q: %v\n", event.Summary, err)
