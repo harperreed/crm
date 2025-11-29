@@ -126,6 +126,11 @@ func ImportGmail(database *sql.DB, client *gmail.Service, initial bool) error {
 		return fmt.Errorf("failed to update sync token: %w", err)
 	}
 
+	// Update sync state to 'idle' on success
+	if err := db.UpdateSyncStatus(database, gmailService, "idle", nil); err != nil {
+		return fmt.Errorf("failed to update sync status: %w", err)
+	}
+
 	// Print summary
 	if totalProcessed == 0 {
 		fmt.Println("  ✓ No new emails to import (all up to date)")

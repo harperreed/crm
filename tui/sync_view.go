@@ -213,10 +213,19 @@ func (m Model) handleSyncKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Sync selected service
 		services := []string{"calendar", "contacts", "gmail"}
 		if m.selectedService < len(services) {
-			return m, m.syncService(services[m.selectedService])
+			service := services[m.selectedService]
+			// Send start message immediately, then queue the async sync
+			m.syncInProgress[service] = true
+			m.addSyncMessage(fmt.Sprintf("Starting %s sync...", service))
+			return m, m.syncService(service)
 		}
 	case "a":
 		// Sync all services
+		services := []string{"calendar", "contacts", "gmail"}
+		for _, service := range services {
+			m.syncInProgress[service] = true
+			m.addSyncMessage(fmt.Sprintf("Starting %s sync...", service))
+		}
 		return m, m.syncAllServices()
 	case "r":
 		// Refresh sync status
@@ -231,11 +240,10 @@ func (m Model) handleSyncKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // syncService triggers a sync for a specific service
-func (m *Model) syncService(service string) tea.Cmd {
+func (m Model) syncService(service string) tea.Cmd {
 	return func() tea.Msg {
-		// Mark as in progress
-		m.syncInProgress[service] = true
-		m.addSyncMessage(fmt.Sprintf("Starting %s sync...", service))
+		// Send start message first
+		// (state updates happen in Update() when handling SyncStartMsg)
 
 		// Update database status
 		_ = db.UpdateSyncStatus(m.db, service, "syncing", nil)
