@@ -27,17 +27,46 @@ func TestInitSchema(t *testing.T) {
 		t.Errorf("Table objects not found: %v", err)
 	}
 
-	// Verify indexes exist
-	indexes := []string{
-		"idx_objects_kind",
-		"idx_objects_created_by",
+	// Verify relationships table exists
+	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='relationships'").Scan(&name)
+	if err != nil {
+		t.Errorf("Table relationships not found: %v", err)
+	}
+
+	// Verify objects indexes
+	objectIndexes := []string{
+		"idx_objects_type",
 		"idx_objects_created_at",
 	}
-	for _, idx := range indexes {
+	for _, idx := range objectIndexes {
 		var indexName string
 		err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name=?", idx).Scan(&indexName)
 		if err != nil {
 			t.Errorf("Index %s not found: %v", idx, err)
 		}
+	}
+
+	// Verify relationships indexes
+	relationshipIndexes := []string{
+		"idx_relationships_source",
+		"idx_relationships_target",
+		"idx_relationships_type",
+	}
+	for _, idx := range relationshipIndexes {
+		var indexName string
+		err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name=?", idx).Scan(&indexName)
+		if err != nil {
+			t.Errorf("Index %s not found: %v", idx, err)
+		}
+	}
+
+	// Verify foreign keys are enabled
+	var fkEnabled int
+	err = db.QueryRow("PRAGMA foreign_keys").Scan(&fkEnabled)
+	if err != nil {
+		t.Errorf("Failed to check foreign key status: %v", err)
+	}
+	if fkEnabled != 1 {
+		t.Errorf("Foreign keys not enabled: got %d, want 1", fkEnabled)
 	}
 }
