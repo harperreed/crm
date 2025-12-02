@@ -227,13 +227,17 @@ func LogInteraction(db *sql.DB, interaction *models.InteractionLog) error {
 		return err
 	}
 
-	// Update contact's last_contacted_at in fields
+	// Update contact's last_contacted_at in fields and updated_at timestamp
 	updateContact := `
 		UPDATE objects
-		SET fields = json_set(fields, '$.last_contacted_at', ?)
+		SET fields = json_set(fields, '$.last_contacted_at', ?),
+		    updated_at = ?
 		WHERE id = ? AND kind = 'Contact'
 	`
-	_, err = db.Exec(updateContact, interaction.Timestamp.Format(time.RFC3339Nano), interaction.ContactID.String())
+	_, err = db.Exec(updateContact,
+		interaction.Timestamp.Format(time.RFC3339Nano),
+		time.Now().UTC(),
+		interaction.ContactID.String())
 	if err != nil {
 		return err
 	}
