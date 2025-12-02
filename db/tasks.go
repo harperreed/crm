@@ -43,8 +43,8 @@ func CreateTask(db *sql.DB, task *objects.TaskObject) error {
 	`,
 		task.ID.String(),
 		task.Kind,
-		task.CreatedAt.Format(time.RFC3339),
-		task.UpdatedAt.Format(time.RFC3339),
+		task.CreatedAt.Format(time.RFC3339Nano),
+		task.UpdatedAt.Format(time.RFC3339Nano),
 		task.CreatedBy.String(),
 		string(aclJSON),
 		string(tagsJSON),
@@ -110,7 +110,7 @@ func UpdateTask(db *sql.DB, task *objects.TaskObject) error {
 		SET updated_at = ?, acl = ?, tags = ?, fields = ?
 		WHERE id = ? AND kind = ?
 	`,
-		task.UpdatedAt.Format(time.RFC3339),
+		task.UpdatedAt.Format(time.RFC3339Nano),
 		string(aclJSON),
 		string(tagsJSON),
 		string(fieldsJSON),
@@ -161,12 +161,12 @@ func ListTasks(db *sql.DB, filter *TaskFilter) ([]*objects.TaskObject, error) {
 
 		if filter.DueBefore != nil {
 			query += ` AND json_extract(fields, '$.dueAt') IS NOT NULL AND json_extract(fields, '$.dueAt') <= ?`
-			args = append(args, filter.DueBefore.Format(time.RFC3339))
+			args = append(args, filter.DueBefore.Format(time.RFC3339Nano))
 		}
 
 		if filter.DueAfter != nil {
 			query += ` AND json_extract(fields, '$.dueAt') IS NOT NULL AND json_extract(fields, '$.dueAt') >= ?`
-			args = append(args, filter.DueAfter.Format(time.RFC3339))
+			args = append(args, filter.DueAfter.Format(time.RFC3339Nano))
 		}
 	}
 
@@ -219,7 +219,7 @@ func ListOverdueTasks(db *sql.DB) ([]*objects.TaskObject, error) {
 			AND json_extract(fields, '$.dueAt') < ?
 			AND json_extract(fields, '$.status') NOT IN (?, ?)
 		ORDER BY json_extract(fields, '$.dueAt') ASC
-	`, objects.KindTask, now.Format(time.RFC3339), objects.TaskStatusDone, objects.TaskStatusCancelled)
+	`, objects.KindTask, now.Format(time.RFC3339Nano), objects.TaskStatusDone, objects.TaskStatusCancelled)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query overdue tasks: %w", err)
@@ -269,7 +269,7 @@ func ListDueSoonTasks(db *sql.DB, days int) ([]*objects.TaskObject, error) {
 			AND json_extract(fields, '$.dueAt') <= ?
 			AND json_extract(fields, '$.status') NOT IN (?, ?)
 		ORDER BY json_extract(fields, '$.dueAt') ASC
-	`, objects.KindTask, now.Format(time.RFC3339), threshold.Format(time.RFC3339),
+	`, objects.KindTask, now.Format(time.RFC3339Nano), threshold.Format(time.RFC3339Nano),
 		objects.TaskStatusDone, objects.TaskStatusCancelled)
 
 	if err != nil {
@@ -356,12 +356,12 @@ func parseTaskObject(idStr, kind, createdAtStr, updatedAtStr, createdByStr, aclJ
 		return nil, fmt.Errorf("failed to parse task ID: %w", err)
 	}
 
-	createdAt, err := time.Parse(time.RFC3339, createdAtStr)
+	createdAt, err := time.Parse(time.RFC3339Nano, createdAtStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse created_at: %w", err)
 	}
 
-	updatedAt, err := time.Parse(time.RFC3339, updatedAtStr)
+	updatedAt, err := time.Parse(time.RFC3339Nano, updatedAtStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse updated_at: %w", err)
 	}

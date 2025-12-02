@@ -387,7 +387,7 @@ func UpdateContactLastContacted(db *sql.DB, contactID uuid.UUID, timestamp time.
 		return err
 	}
 
-	obj.Fields["last_contacted_at"] = timestamp.Format(time.RFC3339)
+	obj.Fields["last_contacted_at"] = timestamp.Format(time.RFC3339Nano)
 	return repo.Update(context.Background(), obj)
 }
 

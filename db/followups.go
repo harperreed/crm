@@ -133,7 +133,7 @@ func GetFollowupList(db *sql.DB, limit int) ([]models.FollowupContact, error) {
 			f.Notes = *notes
 		}
 		if lastContactedAtStr != nil {
-			parsed, err := time.Parse(time.RFC3339, *lastContactedAtStr)
+			parsed, err := time.Parse(time.RFC3339Nano, *lastContactedAtStr)
 			if err == nil {
 				f.LastContactedAt = &parsed
 			}
@@ -233,7 +233,7 @@ func LogInteraction(db *sql.DB, interaction *models.InteractionLog) error {
 		SET fields = json_set(fields, '$.last_contacted_at', ?)
 		WHERE id = ? AND kind = 'Contact'
 	`
-	_, err = db.Exec(updateContact, interaction.Timestamp.Format(time.RFC3339), interaction.ContactID.String())
+	_, err = db.Exec(updateContact, interaction.Timestamp.Format(time.RFC3339Nano), interaction.ContactID.String())
 	if err != nil {
 		return err
 	}

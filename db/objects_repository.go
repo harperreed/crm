@@ -52,6 +52,9 @@ func (r *ObjectsRepository) Create(ctx context.Context, obj *Object) error {
 	if obj.Tags == "" {
 		obj.Tags = "[]"
 	}
+	if obj.Fields == nil {
+		obj.Fields = make(map[string]interface{})
+	}
 
 	fieldsJSON, err := json.Marshal(obj.Fields)
 	if err != nil {
@@ -124,6 +127,10 @@ func (r *ObjectsRepository) Update(ctx context.Context, obj *Object) error {
 	}
 
 	obj.UpdatedAt = time.Now().UTC()
+
+	if obj.Fields == nil {
+		obj.Fields = make(map[string]interface{})
+	}
 
 	fieldsJSON, err := json.Marshal(obj.Fields)
 	if err != nil {
