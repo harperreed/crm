@@ -85,7 +85,12 @@ func TestUpdateContactLastContacted(t *testing.T) {
 		t.Fatal("LastContactedAt was not set")
 	}
 
-	if !found.LastContactedAt.Equal(now) {
-		t.Error("LastContactedAt time mismatch")
+	// Allow for small precision loss from JSON serialization (RFC3339 has second precision)
+	diff := found.LastContactedAt.Sub(now)
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > time.Second {
+		t.Errorf("LastContactedAt time mismatch: got %v, want %v (diff: %v)", found.LastContactedAt, now, diff)
 	}
 }

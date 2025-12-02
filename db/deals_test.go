@@ -104,7 +104,11 @@ func TestAddDealNote(t *testing.T) {
 		t.Fatalf("CreateDeal failed: %v", err)
 	}
 
-	originalLastActivity := deal.LastActivityAt
+	// Truncate to second precision to match JSON serialization
+	originalLastActivity := deal.LastActivityAt.Truncate(time.Second)
+
+	// Sleep to ensure note timestamp is at least 1 second later
+	time.Sleep(time.Second)
 
 	note := &models.DealNote{
 		DealID:  deal.ID,
@@ -139,7 +143,8 @@ func TestAddDealNote(t *testing.T) {
 		t.Fatalf("GetDeal after note failed: %v", err)
 	}
 	if !updatedDeal.LastActivityAt.After(originalLastActivity) {
-		t.Error("Deal's LastActivityAt was not updated after adding note")
+		t.Errorf("Deal's LastActivityAt was not updated after adding note: original=%v, updated=%v, equal=%v",
+			originalLastActivity, updatedDeal.LastActivityAt, originalLastActivity.Equal(updatedDeal.LastActivityAt))
 	}
 }
 

@@ -77,14 +77,19 @@ func GetContactCadence(db *sql.DB, contactID uuid.UUID) (*models.ContactCadence,
 func GetFollowupList(db *sql.DB, limit int) ([]models.FollowupContact, error) {
 	query := `
 		SELECT
-			c.id, c.name, c.email, c.phone, c.company_id, c.notes,
-			c.last_contacted_at, c.created_at, c.updated_at,
+			c.id, c.name,
+			json_extract(c.metadata, '$.email') as email,
+			json_extract(c.metadata, '$.phone') as phone,
+			json_extract(c.metadata, '$.company_id') as company_id,
+			json_extract(c.metadata, '$.notes') as notes,
+			json_extract(c.metadata, '$.last_contacted_at') as last_contacted_at,
+			c.created_at, c.updated_at,
 			cc.cadence_days, cc.relationship_strength, cc.priority_score,
 			cc.next_followup_date,
 			CAST((julianday('now') - julianday(cc.last_interaction_date)) AS INTEGER) as days_since
-		FROM contacts c
+		FROM objects c
 		INNER JOIN contact_cadence cc ON c.id = cc.contact_id
-		WHERE cc.priority_score > 0
+		WHERE c.type = 'Contact' AND cc.priority_score > 0
 		ORDER BY cc.priority_score DESC
 		LIMIT ?
 	`
@@ -101,10 +106,10 @@ func GetFollowupList(db *sql.DB, limit int) ([]models.FollowupContact, error) {
 	for rows.Next() {
 		var f models.FollowupContact
 		var idStr, companyIDStr string
-		var companyID *string
+		var email, phone, notes, lastContactedAtStr, companyID *string
 		err := rows.Scan(
-			&idStr, &f.Name, &f.Email, &f.Phone, &companyID, &f.Notes,
-			&f.LastContactedAt, &f.CreatedAt, &f.UpdatedAt,
+			&idStr, &f.Name, &email, &phone, &companyID, &notes,
+			&lastContactedAtStr, &f.CreatedAt, &f.UpdatedAt,
 			&f.CadenceDays, &f.RelationshipStrength, &f.PriorityScore,
 			&f.NextFollowupDate, &f.DaysSinceContact,
 		)
@@ -115,6 +120,22 @@ func GetFollowupList(db *sql.DB, limit int) ([]models.FollowupContact, error) {
 		f.ID, err = uuid.Parse(idStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse contact ID: %w", err)
+		}
+
+		if email != nil {
+			f.Email = *email
+		}
+		if phone != nil {
+			f.Phone = *phone
+		}
+		if notes != nil {
+			f.Notes = *notes
+		}
+		if lastContactedAtStr != nil {
+			parsed, err := time.Parse(time.RFC3339, *lastContactedAtStr)
+			if err == nil {
+				f.LastContactedAt = &parsed
+			}
 		}
 
 		if companyID != nil {
@@ -205,9 +226,13 @@ func LogInteraction(db *sql.DB, interaction *models.InteractionLog) error {
 		return err
 	}
 
-	// Update contact's last_contacted_at
-	updateContact := `UPDATE contacts SET last_contacted_at = ? WHERE id = ?`
-	_, err = db.Exec(updateContact, interaction.Timestamp, interaction.ContactID.String())
+	// Update contact's last_contacted_at in metadata
+	updateContact := `
+		UPDATE objects
+		SET metadata = json_set(metadata, '$.last_contacted_at', ?)
+		WHERE id = ? AND type = 'Contact'
+	`
+	_, err = db.Exec(updateContact, interaction.Timestamp.Format(time.RFC3339), interaction.ContactID.String())
 	if err != nil {
 		return err
 	}
