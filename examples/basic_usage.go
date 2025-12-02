@@ -31,7 +31,7 @@ func main() {
 	relRepo := db.NewRelationshipsRepository(database)
 	ctx := context.Background()
 
-	fmt.Println("=== Office OS Foundation Example ===\n")
+	fmt.Println("=== Office OS Foundation Example ===")
 
 	// Example 1: Create objects
 	fmt.Println("1. Creating objects...")
