@@ -50,7 +50,8 @@ func LoadVaultConfig() (*VaultConfig, error) {
 
 	// Initialize with defaults
 	cfg := &VaultConfig{
-		VaultDB: "vault.db",
+		VaultDB:  "vault.db",
+		AutoSync: true,
 	}
 
 	// Try to load from file

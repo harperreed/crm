@@ -48,7 +48,7 @@ func TestLoadVaultConfig_NotFound(t *testing.T) {
 	assert.Empty(t, cfg.Token, "Token should be empty")
 	assert.Empty(t, cfg.DerivedKey, "DerivedKey should be empty")
 	assert.Empty(t, cfg.DeviceID, "DeviceID should be empty")
-	assert.False(t, cfg.AutoSync, "AutoSync should be false")
+	assert.True(t, cfg.AutoSync, "AutoSync should default to true")
 }
 
 func TestSaveAndLoadVaultConfig(t *testing.T) {
