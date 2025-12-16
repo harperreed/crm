@@ -11,7 +11,7 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"suitesync/vault"
+	"github.com/harperreed/sweet/vault"
 
 	"github.com/google/uuid"
 	"github.com/harperreed/pagen/db"

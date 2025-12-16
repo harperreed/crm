@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"suitesync/vault"
+	"github.com/harperreed/sweet/vault"
 
 	"github.com/harperreed/pagen/sync"
 	"golang.org/x/term"

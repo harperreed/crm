@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/goccy/go-graphviz v0.2.9
 	github.com/google/uuid v1.6.0
+	github.com/harperreed/sweet v0.3.1
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/modelcontextprotocol/go-sdk v1.1.0
@@ -17,10 +18,7 @@ require (
 	golang.org/x/oauth2 v0.33.0
 	golang.org/x/term v0.38.0
 	google.golang.org/api v0.256.0
-	suitesync v0.3.0
 )
-
-replace suitesync => github.com/harperreed/sweet v0.3.0
 
 require (
 	cloud.google.com/go/auth v0.17.0 // indirect
