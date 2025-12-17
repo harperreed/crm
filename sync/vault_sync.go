@@ -7,8 +7,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/harperreed/sweet/vault"
@@ -18,13 +20,28 @@ import (
 	"github.com/harperreed/pagen/models"
 )
 
+// AppID is the namespace UUID for pagen sync data.
+const AppID = "e9240d3f-967d-485e-8c63-e0adf7eecca0"
+
+func parseTime(raw string) time.Time {
+	if raw == "" {
+		return time.Time{}
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
 // VaultSyncer manages bidirectional synchronization with vault server.
 type VaultSyncer struct {
-	config *VaultConfig
-	store  *vault.Store
-	keys   vault.Keys
-	client *vault.Client
-	appDB  *sql.DB
+	config      *VaultConfig
+	store       *vault.Store
+	keys        vault.Keys
+	client      *vault.Client
+	vaultSyncer *vault.Syncer
+	appDB       *sql.DB
 }
 
 // NewVaultSyncer creates a new vault syncer instance.
@@ -53,18 +70,29 @@ func NewVaultSyncer(cfg *VaultConfig, appDB *sql.DB) (*VaultSyncer, error) {
 
 	// Create sync client
 	client := vault.NewClient(vault.SyncConfig{
+		AppID:        AppID,
 		BaseURL:      cfg.Server,
 		DeviceID:     cfg.DeviceID,
 		AuthToken:    cfg.Token,
 		RefreshToken: cfg.RefreshToken,
+		TokenExpires: parseTime(cfg.TokenExpires),
+		OnTokenRefresh: func(token, refreshToken string, expires time.Time) {
+			cfg.Token = token
+			cfg.RefreshToken = refreshToken
+			cfg.TokenExpires = expires.Format(time.RFC3339)
+			if err := SaveVaultConfig(cfg); err != nil {
+				log.Printf("warning: failed to persist refreshed vault token: %v", err)
+			}
+		},
 	})
 
 	return &VaultSyncer{
-		config: cfg,
-		store:  store,
-		keys:   keys,
-		client: client,
-		appDB:  appDB,
+		config:      cfg,
+		store:       store,
+		keys:        keys,
+		client:      client,
+		vaultSyncer: vault.NewSyncer(store, client, keys, cfg.UserID),
+		appDB:       appDB,
 	}, nil
 }
 
@@ -78,11 +106,17 @@ func (s *VaultSyncer) Close() error {
 
 // Sync performs a full bidirectional sync without events.
 func (s *VaultSyncer) Sync(ctx context.Context) error {
+	if !s.canSync() {
+		return errors.New("vault sync not configured")
+	}
 	return vault.Sync(ctx, s.store, s.client, s.keys, s.config.UserID, s.applyChange)
 }
 
 // SyncWithEvents performs a full bidirectional sync with event callbacks.
 func (s *VaultSyncer) SyncWithEvents(ctx context.Context, events vault.SyncEvents) error {
+	if !s.canSync() {
+		return errors.New("vault sync not configured")
+	}
 	return vault.Sync(ctx, s.store, s.client, s.keys, s.config.UserID, s.applyChange, &events)
 }
 
@@ -109,6 +143,10 @@ func (s *VaultSyncer) LastSyncedSeq(ctx context.Context) (int64, error) {
 	return seq, nil
 }
 
+func (s *VaultSyncer) canSync() bool {
+	return s.client != nil && s.config.UserID != "" && s.config.Token != ""
+}
+
 // QueueContactChange queues a contact change for sync.
 func (s *VaultSyncer) QueueContactChange(ctx context.Context, contact *models.Contact, companyName string, op vault.Op) error {
 	var lastContactedAt *string
@@ -117,11 +155,17 @@ func (s *VaultSyncer) QueueContactChange(ctx context.Context, contact *models.Co
 		lastContactedAt = &ts
 	}
 
+	var companyID string
+	if contact.CompanyID != nil {
+		companyID = contact.CompanyID.String()
+	}
+
 	payload := ContactPayload{
 		ID:              contact.ID.String(),
 		Name:            contact.Name,
 		Email:           contact.Email,
 		Phone:           contact.Phone,
+		CompanyID:       companyID,
 		CompanyName:     companyName,
 		Notes:           contact.Notes,
 		LastContactedAt: lastContactedAt,
@@ -149,13 +193,25 @@ func (s *VaultSyncer) QueueDealChange(ctx context.Context, deal *models.Deal, co
 		expectedCloseDate = &ts
 	}
 
+	var companyID string
+	if deal.CompanyID != uuid.Nil {
+		companyID = deal.CompanyID.String()
+	}
+
+	var contactID string
+	if deal.ContactID != nil {
+		contactID = deal.ContactID.String()
+	}
+
 	payload := DealPayload{
 		ID:                deal.ID.String(),
 		Title:             deal.Title,
 		Amount:            deal.Amount,
 		Currency:          deal.Currency,
 		Stage:             deal.Stage,
+		CompanyID:         companyID,
 		CompanyName:       companyName,
+		ContactID:         contactID,
 		ContactName:       contactName,
 		ExpectedCloseDate: expectedCloseDate,
 	}
@@ -164,11 +220,24 @@ func (s *VaultSyncer) QueueDealChange(ctx context.Context, deal *models.Deal, co
 
 // QueueDealNoteChange queues a deal note change for sync.
 func (s *VaultSyncer) QueueDealNoteChange(ctx context.Context, note *models.DealNote, dealTitle string, op vault.Op) error {
+	var companyID, companyName string
+	if deal, err := db.GetDeal(s.appDB, note.DealID); err == nil && deal != nil {
+		companyID = deal.CompanyID.String()
+		if dealTitle == "" {
+			dealTitle = deal.Title
+		}
+		if company, err := db.GetCompany(s.appDB, deal.CompanyID); err == nil && company != nil {
+			companyName = company.Name
+		}
+	}
 	payload := DealNotePayload{
-		ID:        note.ID.String(),
-		DealTitle: dealTitle,
-		Content:   note.Content,
-		CreatedAt: note.CreatedAt.Format(time.RFC3339),
+		ID:              note.ID.String(),
+		DealID:          note.DealID.String(),
+		DealTitle:       dealTitle,
+		DealCompanyID:   companyID,
+		DealCompanyName: companyName,
+		Content:         note.Content,
+		CreatedAt:       note.CreatedAt.Format(time.RFC3339),
 	}
 	return s.queueChange(ctx, EntityDealNote, note.ID.String(), op, payload)
 }
@@ -177,6 +246,8 @@ func (s *VaultSyncer) QueueDealNoteChange(ctx context.Context, note *models.Deal
 func (s *VaultSyncer) QueueRelationshipChange(ctx context.Context, rel *models.Relationship, contact1Name, contact2Name string, op vault.Op) error {
 	payload := RelationshipPayload{
 		ID:               rel.ID.String(),
+		ContactID1:       rel.ContactID1.String(),
+		ContactID2:       rel.ContactID2.String(),
 		Contact1Name:     contact1Name,
 		Contact2Name:     contact2Name,
 		RelationshipType: rel.RelationshipType,
@@ -189,6 +260,7 @@ func (s *VaultSyncer) QueueRelationshipChange(ctx context.Context, rel *models.R
 func (s *VaultSyncer) QueueInteractionLogChange(ctx context.Context, interaction *models.InteractionLog, contactName string, op vault.Op) error {
 	payload := InteractionLogPayload{
 		ID:              interaction.ID.String(),
+		ContactID:       interaction.ContactID.String(),
 		ContactName:     contactName,
 		InteractionType: interaction.InteractionType,
 		InteractedAt:    interaction.Timestamp.Format(time.RFC3339),
@@ -225,39 +297,16 @@ func (s *VaultSyncer) QueueSuggestionChange(ctx context.Context, suggestion *mod
 
 // queueChange is the private helper that handles encryption and enqueueing.
 func (s *VaultSyncer) queueChange(ctx context.Context, entity, entityID string, op vault.Op, payload interface{}) error {
-	// Create change
-	change, err := vault.NewChange(entity, entityID, op, payload)
-	if err != nil {
-		return fmt.Errorf("failed to create change: %w", err)
+	if s.vaultSyncer == nil {
+		return errors.New("vault sync not configured")
 	}
 
-	// Build AAD for authenticated encryption
-	aad := change.AAD(s.config.UserID, s.config.DeviceID)
-
-	// Marshal payload to JSON
-	plaintext, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal payload: %w", err)
+	if _, err := s.vaultSyncer.QueueChange(ctx, entity, entityID, op, payload); err != nil {
+		return fmt.Errorf("failed to queue change: %w", err)
 	}
 
-	// Encrypt payload
-	env, err := vault.Encrypt(s.keys.EncKey, plaintext, aad)
-	if err != nil {
-		return fmt.Errorf("failed to encrypt payload: %w", err)
-	}
-
-	// Enqueue encrypted change
-	if err := s.store.EnqueueEncryptedChange(ctx, change, s.config.UserID, s.config.DeviceID, env); err != nil {
-		return fmt.Errorf("failed to enqueue change: %w", err)
-	}
-
-	// Auto-sync if enabled
-	if s.config.AutoSync {
-		go func() {
-			syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			_ = s.Sync(syncCtx)
-		}()
+	if s.config.AutoSync && s.canSync() {
+		return s.Sync(ctx)
 	}
 
 	return nil
@@ -302,49 +351,58 @@ func (s *VaultSyncer) applyContactChange(ctx context.Context, c vault.Change) er
 
 	switch c.Op {
 	case vault.OpUpsert:
-		// Build contact model
-		contact := &models.Contact{
-			ID:    id,
-			Name:  payload.Name,
-			Email: payload.Email,
-			Phone: payload.Phone,
-			Notes: payload.Notes,
-		}
-
-		// Parse last contacted timestamp
-		if payload.LastContactedAt != nil {
-			t, err := time.Parse(time.RFC3339, *payload.LastContactedAt)
-			if err == nil {
-				contact.LastContactedAt = &t
+		var companyUUID *uuid.UUID
+		if payload.CompanyID != "" {
+			if parsed, err := uuid.Parse(payload.CompanyID); err == nil {
+				if company, err := s.ensureCompany(ctx, parsed, payload.CompanyName); err == nil && company != nil {
+					companyUUID = &company.ID
+				} else if err != nil {
+					return fmt.Errorf("ensure company: %w", err)
+				}
 			}
-		}
-
-		// Look up company by name if provided
-		if payload.CompanyName != "" {
+		} else if payload.CompanyName != "" {
 			company, err := db.FindCompanyByName(s.appDB, payload.CompanyName)
 			if err != nil {
 				return fmt.Errorf("failed to find company: %w", err)
 			}
 			if company != nil {
-				contact.CompanyID = &company.ID
+				companyUUID = &company.ID
 			}
 		}
 
-		// Check if contact exists
+		contact := &models.Contact{
+			ID:        id,
+			Name:      payload.Name,
+			Email:     payload.Email,
+			Phone:     payload.Phone,
+			Notes:     payload.Notes,
+			CompanyID: companyUUID,
+		}
+
+		if payload.LastContactedAt != nil {
+			if t, err := time.Parse(time.RFC3339, *payload.LastContactedAt); err == nil {
+				contact.LastContactedAt = &t
+			}
+		}
+
 		existing, err := db.GetContact(s.appDB, id)
 		if err != nil {
 			return fmt.Errorf("failed to check existing contact: %w", err)
 		}
 
 		if existing == nil {
-			// Create new contact
 			if err := db.CreateContact(s.appDB, contact); err != nil {
 				return fmt.Errorf("failed to create contact: %w", err)
 			}
 		} else {
-			// Update existing contact
 			if err := db.UpdateContact(s.appDB, id, contact); err != nil {
 				return fmt.Errorf("failed to update contact: %w", err)
+			}
+		}
+
+		if contact.LastContactedAt != nil {
+			if err := db.UpdateContactLastContacted(s.appDB, contact.ID, *contact.LastContactedAt); err != nil {
+				return fmt.Errorf("update last contacted: %w", err)
 			}
 		}
 
@@ -418,13 +476,9 @@ func (s *VaultSyncer) applyDealChange(ctx context.Context, c vault.Change) error
 
 	switch c.Op {
 	case vault.OpUpsert:
-		// Look up company by name
-		company, err := db.FindCompanyByName(s.appDB, payload.CompanyName)
+		company, err := s.resolveCompanyForDeal(ctx, payload)
 		if err != nil {
-			return fmt.Errorf("failed to find company: %w", err)
-		}
-		if company == nil {
-			return fmt.Errorf("company not found: %s", payload.CompanyName)
+			return err
 		}
 
 		deal := &models.Deal{
@@ -436,16 +490,21 @@ func (s *VaultSyncer) applyDealChange(ctx context.Context, c vault.Change) error
 			CompanyID: company.ID,
 		}
 
-		// Parse expected close date
 		if payload.ExpectedCloseDate != nil {
-			t, err := time.Parse(time.RFC3339, *payload.ExpectedCloseDate)
-			if err == nil {
+			if t, err := time.Parse(time.RFC3339, *payload.ExpectedCloseDate); err == nil {
 				deal.ExpectedCloseDate = &t
 			}
 		}
 
-		// Look up contact by name if provided
-		if payload.ContactName != "" {
+		if payload.ContactID != "" {
+			if parsed, err := uuid.Parse(payload.ContactID); err == nil {
+				if contact, err := s.ensureContact(ctx, parsed, payload.ContactName, &company.ID); err == nil && contact != nil {
+					deal.ContactID = &contact.ID
+				} else if err != nil {
+					return fmt.Errorf("ensure contact: %w", err)
+				}
+			}
+		} else if payload.ContactName != "" {
 			contacts, err := db.FindContacts(s.appDB, payload.ContactName, &company.ID, 1)
 			if err != nil {
 				return fmt.Errorf("failed to find contact: %w", err)
@@ -455,7 +514,6 @@ func (s *VaultSyncer) applyDealChange(ctx context.Context, c vault.Change) error
 			}
 		}
 
-		// Check if deal exists
 		existing, err := db.GetDeal(s.appDB, id)
 		if err != nil {
 			return fmt.Errorf("failed to check existing deal: %w", err)
@@ -466,7 +524,6 @@ func (s *VaultSyncer) applyDealChange(ctx context.Context, c vault.Change) error
 				return fmt.Errorf("failed to create deal: %w", err)
 			}
 		} else {
-			// Update existing deal
 			deal.CreatedAt = existing.CreatedAt
 			if err := db.UpdateDeal(s.appDB, deal); err != nil {
 				return fmt.Errorf("failed to update deal: %w", err)
@@ -496,22 +553,31 @@ func (s *VaultSyncer) applyDealNoteChange(ctx context.Context, c vault.Change) e
 
 	switch c.Op {
 	case vault.OpUpsert:
-		// Find deal by title
-		deals, err := db.FindDeals(s.appDB, "", nil, 100)
+		dealID, err := uuid.Parse(payload.DealID)
 		if err != nil {
-			return fmt.Errorf("failed to find deals: %w", err)
+			return fmt.Errorf("invalid deal ID: %w", err)
 		}
 
-		var dealID uuid.UUID
-		for _, deal := range deals {
-			if deal.Title == payload.DealTitle {
-				dealID = deal.ID
-				break
+		deal, err := db.GetDeal(s.appDB, dealID)
+		if err != nil {
+			return fmt.Errorf("failed to fetch deal: %w", err)
+		}
+		if deal == nil {
+			company, err := s.resolveNoteCompany(ctx, payload)
+			if err != nil {
+				return err
 			}
-		}
-
-		if dealID == uuid.Nil {
-			return fmt.Errorf("deal not found: %s", payload.DealTitle)
+			placeholder := &models.Deal{
+				ID:        dealID,
+				Title:     payload.DealTitle,
+				CompanyID: company.ID,
+				Currency:  "USD",
+				Stage:     "unknown",
+			}
+			if err := db.CreateDeal(s.appDB, placeholder); err != nil {
+				return fmt.Errorf("create placeholder deal: %w", err)
+			}
+			deal = placeholder
 		}
 
 		createdAt, err := time.Parse(time.RFC3339, payload.CreatedAt)
@@ -521,7 +587,7 @@ func (s *VaultSyncer) applyDealNoteChange(ctx context.Context, c vault.Change) e
 
 		note := &models.DealNote{
 			ID:        id,
-			DealID:    dealID,
+			DealID:    deal.ID,
 			Content:   payload.Content,
 			CreatedAt: createdAt,
 		}
@@ -531,7 +597,6 @@ func (s *VaultSyncer) applyDealNoteChange(ctx context.Context, c vault.Change) e
 		}
 
 	case vault.OpDelete:
-		// Deal notes are deleted with their parent deal in the current implementation
 		return nil
 	}
 
@@ -545,10 +610,55 @@ func (s *VaultSyncer) applyRelationshipChange(ctx context.Context, c vault.Chang
 		return fmt.Errorf("failed to unmarshal relationship payload: %w", err)
 	}
 
-	// Note: Relationship sync is complex as it depends on two contacts existing.
-	// For now, we'll skip implementing this to avoid errors.
-	// This can be implemented when there's a real use case.
-	log.Printf("vault sync: skipping relationship change %s (not yet implemented)", payload.ID)
+	if c.Op == vault.OpDelete {
+		repo := db.NewRelationshipsRepository(s.appDB)
+		if err := repo.Delete(ctx, payload.ID); err != nil && !errors.Is(err, db.ErrRelationshipNotFound) {
+			return fmt.Errorf("delete relationship: %w", err)
+		}
+		return nil
+	}
+
+	contact1ID, err := s.resolveContactIdentifier(ctx, payload.ContactID1, payload.Contact1Name)
+	if err != nil {
+		return err
+	}
+	contact2ID, err := s.resolveContactIdentifier(ctx, payload.ContactID2, payload.Contact2Name)
+	if err != nil {
+		return err
+	}
+
+	if contact1ID == uuid.Nil || contact2ID == uuid.Nil {
+		return fmt.Errorf("unable to resolve contacts for relationship %s", payload.ID)
+	}
+
+	if contact1ID.String() > contact2ID.String() {
+		contact1ID, contact2ID = contact2ID, contact1ID
+	}
+
+	repo := db.NewRelationshipsRepository(s.appDB)
+	meta := map[string]interface{}{
+		"relationship_type": payload.RelationshipType,
+		"context":           payload.Context,
+	}
+
+	rel := &db.Relationship{
+		ID:       payload.ID,
+		SourceID: contact1ID.String(),
+		TargetID: contact2ID.String(),
+		Type:     db.RelTypeKnows,
+		Metadata: meta,
+	}
+
+	if err := repo.Update(ctx, rel); err != nil {
+		if errors.Is(err, db.ErrRelationshipNotFound) {
+			if err := repo.Create(ctx, rel); err != nil {
+				return fmt.Errorf("create relationship: %w", err)
+			}
+		} else {
+			return fmt.Errorf("update relationship: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -566,13 +676,25 @@ func (s *VaultSyncer) applyInteractionLogChange(ctx context.Context, c vault.Cha
 
 	switch c.Op {
 	case vault.OpUpsert:
-		// Find contact by name
-		contacts, err := db.FindContacts(s.appDB, payload.ContactName, nil, 1)
-		if err != nil {
-			return fmt.Errorf("failed to find contact: %w", err)
+		var contactID uuid.UUID
+		if payload.ContactID != "" {
+			if parsed, err := uuid.Parse(payload.ContactID); err == nil {
+				resolved, err := s.ensureContact(ctx, parsed, payload.ContactName, nil)
+				if err != nil {
+					return fmt.Errorf("ensure contact: %w", err)
+				}
+				contactID = resolved.ID
+			}
 		}
-		if len(contacts) == 0 {
-			return fmt.Errorf("contact not found: %s", payload.ContactName)
+		if contactID == uuid.Nil {
+			contact, err := s.findContactByName(payload.ContactName, nil)
+			if err != nil {
+				return fmt.Errorf("failed to find contact: %w", err)
+			}
+			if contact == nil {
+				return fmt.Errorf("contact not found: %s", payload.ContactName)
+			}
+			contactID = contact.ID
 		}
 
 		timestamp, err := time.Parse(time.RFC3339, payload.InteractedAt)
@@ -582,7 +704,7 @@ func (s *VaultSyncer) applyInteractionLogChange(ctx context.Context, c vault.Cha
 
 		interaction := &models.InteractionLog{
 			ID:              id,
-			ContactID:       contacts[0].ID,
+			ContactID:       contactID,
 			InteractionType: payload.InteractionType,
 			Timestamp:       timestamp,
 			Sentiment:       payload.Sentiment,
@@ -594,7 +716,6 @@ func (s *VaultSyncer) applyInteractionLogChange(ctx context.Context, c vault.Cha
 		}
 
 	case vault.OpDelete:
-		// Interaction logs are typically not deleted, skip for now
 		return nil
 	}
 
@@ -615,6 +736,10 @@ func (s *VaultSyncer) applyContactCadenceChange(ctx context.Context, c vault.Cha
 
 	switch c.Op {
 	case vault.OpUpsert:
+		if _, err := s.ensureContact(ctx, contactID, payload.ContactName, nil); err != nil {
+			return fmt.Errorf("ensure contact for cadence: %w", err)
+		}
+
 		cadence := &models.ContactCadence{
 			ContactID:            contactID,
 			CadenceDays:          payload.CadenceDays,
@@ -645,4 +770,136 @@ func (s *VaultSyncer) applySuggestionChange(ctx context.Context, c vault.Change)
 	// as they're generated locally. Skip for now.
 	log.Printf("vault sync: skipping suggestion change %s (suggestions are local-only)", payload.ID)
 	return nil
+}
+
+func fallbackName(name string, id uuid.UUID) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed != "" {
+		return trimmed
+	}
+	return id.String()
+}
+
+func (s *VaultSyncer) ensureCompany(ctx context.Context, id uuid.UUID, name string) (*models.Company, error) {
+	if id == uuid.Nil {
+		return nil, nil
+	}
+	company, err := db.GetCompany(s.appDB, id)
+	if err != nil {
+		return nil, err
+	}
+	if company != nil {
+		return company, nil
+	}
+
+	placeholder := &models.Company{
+		ID:   id,
+		Name: fallbackName(name, id),
+	}
+	if err := db.CreateCompany(s.appDB, placeholder); err != nil {
+		return nil, err
+	}
+	return placeholder, nil
+}
+
+func (s *VaultSyncer) ensureContact(ctx context.Context, id uuid.UUID, name string, companyID *uuid.UUID) (*models.Contact, error) {
+	if id == uuid.Nil {
+		return nil, nil
+	}
+	contact, err := db.GetContact(s.appDB, id)
+	if err != nil {
+		return nil, err
+	}
+	if contact != nil {
+		return contact, nil
+	}
+
+	placeholder := &models.Contact{
+		ID:   id,
+		Name: fallbackName(name, id),
+	}
+	if companyID != nil {
+		placeholder.CompanyID = companyID
+	}
+	if err := db.CreateContact(s.appDB, placeholder); err != nil {
+		return nil, err
+	}
+	return placeholder, nil
+}
+
+func (s *VaultSyncer) findContactByName(name string, companyID *uuid.UUID) (*models.Contact, error) {
+	if strings.TrimSpace(name) == "" {
+		return nil, nil
+	}
+	contacts, err := db.FindContacts(s.appDB, name, companyID, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(contacts) == 0 {
+		return nil, nil
+	}
+	return &contacts[0], nil
+}
+
+func (s *VaultSyncer) resolveContactIdentifier(ctx context.Context, idStr, name string) (uuid.UUID, error) {
+	if idStr != "" {
+		if parsed, err := uuid.Parse(idStr); err == nil {
+			contact, err := s.ensureContact(ctx, parsed, name, nil)
+			if err != nil {
+				return uuid.Nil, err
+			}
+			return contact.ID, nil
+		}
+	}
+	if name != "" {
+		contact, err := s.findContactByName(name, nil)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		if contact != nil {
+			return contact.ID, nil
+		}
+		placeholder, err := s.ensureContact(ctx, uuid.New(), name, nil)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		return placeholder.ID, nil
+	}
+	return uuid.Nil, fmt.Errorf("missing contact information")
+}
+
+func (s *VaultSyncer) resolveCompanyForDeal(ctx context.Context, payload DealPayload) (*models.Company, error) {
+	if payload.CompanyID != "" {
+		if parsed, err := uuid.Parse(payload.CompanyID); err == nil {
+			return s.ensureCompany(ctx, parsed, payload.CompanyName)
+		}
+	}
+	if payload.CompanyName != "" {
+		company, err := db.FindCompanyByName(s.appDB, payload.CompanyName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find company: %w", err)
+		}
+		if company != nil {
+			return company, nil
+		}
+	}
+	return nil, fmt.Errorf("company not found for deal %s", payload.ID)
+}
+
+func (s *VaultSyncer) resolveNoteCompany(ctx context.Context, payload DealNotePayload) (*models.Company, error) {
+	if payload.DealCompanyID != "" {
+		if parsed, err := uuid.Parse(payload.DealCompanyID); err == nil {
+			return s.ensureCompany(ctx, parsed, payload.DealCompanyName)
+		}
+	}
+	if payload.DealCompanyName != "" {
+		company, err := db.FindCompanyByName(s.appDB, payload.DealCompanyName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find company for deal note: %w", err)
+		}
+		if company != nil {
+			return company, nil
+		}
+	}
+	return nil, fmt.Errorf("company information missing for deal note %s", payload.ID)
 }

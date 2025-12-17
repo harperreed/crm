@@ -22,7 +22,8 @@ type ContactPayload struct {
 	Name            string  `json:"name"`
 	Email           string  `json:"email,omitempty"`
 	Phone           string  `json:"phone,omitempty"`
-	CompanyName     string  `json:"company_name,omitempty"` // denormalized from CompanyID
+	CompanyID       string  `json:"company_id,omitempty"`
+	CompanyName     string  `json:"company_name,omitempty"`
 	Notes           string  `json:"notes,omitempty"`
 	LastContactedAt *string `json:"last_contacted_at,omitempty"` // RFC3339 timestamp
 }
@@ -44,22 +45,29 @@ type DealPayload struct {
 	Amount            int64   `json:"amount"` // cents
 	Currency          string  `json:"currency"`
 	Stage             string  `json:"stage"`
-	CompanyName       string  `json:"company_name,omitempty"`        // denormalized from CompanyID
+	CompanyID         string  `json:"company_id,omitempty"`
+	CompanyName       string  `json:"company_name,omitempty"` // denormalized from CompanyID
+	ContactID         string  `json:"contact_id,omitempty"`
 	ContactName       string  `json:"contact_name,omitempty"`        // denormalized from ContactID
 	ExpectedCloseDate *string `json:"expected_close_date,omitempty"` // RFC3339 timestamp
 }
 
 // DealNotePayload represents a note attached to a deal.
 type DealNotePayload struct {
-	ID        string `json:"id"`
-	DealTitle string `json:"deal_title"` // denormalized from DealID
-	Content   string `json:"content"`
-	CreatedAt string `json:"created_at"` // RFC3339 timestamp
+	ID              string `json:"id"`
+	DealID          string `json:"deal_id"`
+	DealTitle       string `json:"deal_title"` // denormalized from DealID
+	DealCompanyID   string `json:"deal_company_id,omitempty"`
+	DealCompanyName string `json:"deal_company_name,omitempty"`
+	Content         string `json:"content"`
+	CreatedAt       string `json:"created_at"` // RFC3339 timestamp
 }
 
 // RelationshipPayload represents a bidirectional relationship between contacts.
 type RelationshipPayload struct {
 	ID               string `json:"id"`
+	ContactID1       string `json:"contact_id_1,omitempty"`
+	ContactID2       string `json:"contact_id_2,omitempty"`
 	Contact1Name     string `json:"contact1_name"` // denormalized from ContactID1
 	Contact2Name     string `json:"contact2_name"` // denormalized from ContactID2
 	RelationshipType string `json:"relationship_type"`
@@ -69,6 +77,7 @@ type RelationshipPayload struct {
 // InteractionLogPayload represents an interaction record.
 type InteractionLogPayload struct {
 	ID              string  `json:"id"`
+	ContactID       string  `json:"contact_id,omitempty"`
 	ContactName     string  `json:"contact_name"` // denormalized from ContactID
 	InteractionType string  `json:"interaction_type"`
 	InteractedAt    string  `json:"interacted_at"` // RFC3339 timestamp
