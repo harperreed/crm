@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"database/sql"
 	"flag"
 	"fmt"
 	"os"
@@ -11,25 +10,24 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
+	"github.com/harperreed/pagen/charm"
 )
 
 // FollowupListCommand lists contacts needing follow-up.
-func FollowupListCommand(database *sql.DB, args []string) error {
+func FollowupListCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	overdueOnly := fs.Bool("overdue-only", false, "Show only overdue contacts")
 	strength := fs.String("strength", "", "Filter by relationship strength (weak/medium/strong)")
 	limit := fs.Int("limit", 10, "Maximum number of contacts to show")
 	_ = fs.Parse(args)
 
-	followups, err := db.GetFollowupList(database, *limit)
+	followups, err := client.GetFollowupList(*limit)
 	if err != nil {
 		return fmt.Errorf("failed to get followup list: %w", err)
 	}
 
 	// Apply filters
-	var filtered []models.FollowupContact
+	var filtered []*charm.FollowupContact
 	for _, f := range followups {
 		if *overdueOnly && f.PriorityScore <= 0 {
 			continue
@@ -63,53 +61,56 @@ func FollowupListCommand(database *sql.DB, args []string) error {
 }
 
 // FollowupStatsCommand shows follow-up statistics.
-func FollowupStatsCommand(database *sql.DB, args []string) error {
-	query := `
-		SELECT
-			relationship_strength,
-			COUNT(*) as count,
-			AVG(CAST((julianday('now') - julianday(last_interaction_date)) AS INTEGER)) as avg_days
-		FROM contact_cadence
-		WHERE last_interaction_date IS NOT NULL
-		GROUP BY relationship_strength
-	`
-
-	rows, err := database.Query(query)
+func FollowupStatsCommand(client *charm.Client, args []string) error {
+	cadences, err := client.ListContactCadences()
 	if err != nil {
-		return fmt.Errorf("failed to get stats: %w", err)
+		return fmt.Errorf("failed to get cadences: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+
+	// Aggregate by relationship strength
+	stats := make(map[string]struct {
+		count   int
+		avgDays float64
+		total   float64
+	})
+
+	for _, cadence := range cadences {
+		if cadence.LastInteractionDate == nil {
+			continue
+		}
+
+		s := stats[cadence.RelationshipStrength]
+		s.count++
+		daysSince := time.Since(*cadence.LastInteractionDate).Hours() / 24
+		s.total += daysSince
+		s.avgDays = s.total / float64(s.count)
+		stats[cadence.RelationshipStrength] = s
+	}
 
 	fmt.Println("NETWORK HEALTH")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	for rows.Next() {
-		var strength string
-		var count int
-		var avgDays sql.NullFloat64
+	// Display stats for each strength level
+	for _, strength := range []string{charm.StrengthWeak, charm.StrengthMedium, charm.StrengthStrong} {
+		if s, exists := stats[strength]; exists {
+			icon := "🟢"
+			switch strength {
+			case charm.StrengthWeak:
+				icon = "🔴"
+			case charm.StrengthMedium:
+				icon = "🟡"
+			}
 
-		err := rows.Scan(&strength, &count, &avgDays)
-		if err != nil {
-			return err
+			fmt.Printf("  %s %s relationships: %d (avg contact: %.0f days)\n",
+				icon, strength, s.count, s.avgDays)
 		}
-
-		icon := "🟢"
-		switch strength {
-		case models.StrengthWeak:
-			icon = "🔴"
-		case models.StrengthMedium:
-			icon = "🟡"
-		}
-
-		fmt.Printf("  %s %s relationships: %d (avg contact: %.0f days)\n",
-			icon, strength, count, avgDays.Float64)
 	}
 
-	return rows.Err()
+	return nil
 }
 
 // LogInteractionCommand logs an interaction with a contact.
-func LogInteractionCommand(database *sql.DB, args []string) error {
+func LogInteractionCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("log", flag.ExitOnError)
 	contactIDStr := fs.String("contact", "", "Contact ID or name (required)")
 	interactionType := fs.String("type", "meeting", "Interaction type (meeting/call/email/message/event)")
@@ -128,7 +129,7 @@ func LogInteractionCommand(database *sql.DB, args []string) error {
 		contactID = parsedID
 	} else {
 		// Search by name
-		contacts, err := db.FindContacts(database, *contactIDStr, nil, 10)
+		contacts, err := client.ListContacts(&charm.ContactFilter{Query: *contactIDStr, Limit: 10})
 		if err != nil {
 			return fmt.Errorf("failed to find contact: %w", err)
 		}
@@ -141,10 +142,11 @@ func LogInteractionCommand(database *sql.DB, args []string) error {
 		contactID = contacts[0].ID
 	}
 
-	interaction := &models.InteractionLog{
+	timestamp := time.Now()
+	interaction := &charm.InteractionLog{
 		ContactID:       contactID,
 		InteractionType: *interactionType,
-		Timestamp:       time.Now(),
+		Timestamp:       timestamp,
 		Notes:           *notes,
 	}
 
@@ -152,8 +154,23 @@ func LogInteractionCommand(database *sql.DB, args []string) error {
 		interaction.Sentiment = sentiment
 	}
 
-	if err := db.LogInteraction(database, interaction); err != nil {
+	if err := client.CreateInteractionLog(interaction); err != nil {
 		return fmt.Errorf("failed to log interaction: %w", err)
+	}
+
+	// Update contact's last_contacted_at
+	contact, err := client.GetContact(contactID)
+	if err != nil {
+		return fmt.Errorf("failed to get contact: %w", err)
+	}
+	contact.LastContactedAt = &timestamp
+	if err := client.UpdateContact(contact); err != nil {
+		return fmt.Errorf("failed to update contact: %w", err)
+	}
+
+	// Update cadence
+	if err := client.UpdateCadenceAfterInteraction(contactID, timestamp); err != nil {
+		return fmt.Errorf("failed to update cadence: %w", err)
 	}
 
 	fmt.Printf("✓ Logged %s interaction with contact\n", *interactionType)
@@ -161,7 +178,7 @@ func LogInteractionCommand(database *sql.DB, args []string) error {
 }
 
 // SetCadenceCommand sets the follow-up cadence for a contact.
-func SetCadenceCommand(database *sql.DB, args []string) error {
+func SetCadenceCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("set-cadence", flag.ExitOnError)
 	contactIDStr := fs.String("contact", "", "Contact ID or name (required)")
 	days := fs.Int("days", 30, "Cadence in days")
@@ -178,7 +195,7 @@ func SetCadenceCommand(database *sql.DB, args []string) error {
 	if err == nil {
 		contactID = parsedID
 	} else {
-		contacts, err := db.FindContacts(database, *contactIDStr, nil, 10)
+		contacts, err := client.ListContacts(&charm.ContactFilter{Query: *contactIDStr, Limit: 10})
 		if err != nil {
 			return fmt.Errorf("failed to find contact: %w", err)
 		}
@@ -188,9 +205,49 @@ func SetCadenceCommand(database *sql.DB, args []string) error {
 		contactID = contacts[0].ID
 	}
 
-	err = db.SetContactCadence(database, contactID, *days, *strength)
+	// Get or create cadence
+	cadence, err := client.GetContactCadence(contactID)
 	if err != nil {
-		return fmt.Errorf("failed to set cadence: %w", err)
+		return fmt.Errorf("failed to get cadence: %w", err)
+	}
+
+	if cadence == nil {
+		cadence = &charm.ContactCadence{
+			ContactID: contactID,
+		}
+	}
+
+	cadence.CadenceDays = *days
+	cadence.RelationshipStrength = *strength
+
+	// Compute priority score
+	if cadence.LastInteractionDate != nil {
+		daysSinceContact := int(time.Since(*cadence.LastInteractionDate).Hours() / 24)
+		daysOverdue := daysSinceContact - cadence.CadenceDays
+
+		if daysOverdue <= 0 {
+			cadence.PriorityScore = 0.0
+		} else {
+			baseScore := float64(daysOverdue * 2)
+			multiplier := 1.0
+			switch cadence.RelationshipStrength {
+			case charm.StrengthStrong:
+				multiplier = 2.0
+			case charm.StrengthMedium:
+				multiplier = 1.5
+			case charm.StrengthWeak:
+				multiplier = 1.0
+			}
+			cadence.PriorityScore = baseScore * multiplier
+		}
+
+		// Update next followup
+		next := cadence.LastInteractionDate.AddDate(0, 0, cadence.CadenceDays)
+		cadence.NextFollowupDate = &next
+	}
+
+	if err := client.SaveContactCadence(cadence); err != nil {
+		return fmt.Errorf("failed to save cadence: %w", err)
 	}
 
 	fmt.Printf("✓ Set cadence to %d days (%s strength)\n", *days, *strength)
@@ -198,12 +255,12 @@ func SetCadenceCommand(database *sql.DB, args []string) error {
 }
 
 // DigestCommand generates a daily follow-up digest.
-func DigestCommand(database *sql.DB, args []string) error {
+func DigestCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("digest", flag.ExitOnError)
 	format := fs.String("format", "text", "Output format (text/json/html)")
 	_ = fs.Parse(args)
 
-	followups, err := db.GetFollowupList(database, 50)
+	followups, err := client.GetFollowupList(50)
 	if err != nil {
 		return fmt.Errorf("failed to get followup list: %w", err)
 	}
@@ -220,14 +277,14 @@ func DigestCommand(database *sql.DB, args []string) error {
 	return fmt.Errorf("unsupported format: %s", *format)
 }
 
-func printTextDigest(followups []models.FollowupContact) error {
+func printTextDigest(followups []*charm.FollowupContact) error {
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Printf("  FOLLOW-UPS FOR %s\n", time.Now().Format("2006-01-02"))
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println()
 
 	// Split into categories
-	var overdue, dueSoon []models.FollowupContact
+	var overdue, dueSoon []*charm.FollowupContact
 	for _, f := range followups {
 		if f.DaysSinceContact > f.CadenceDays+7 {
 			overdue = append(overdue, f)
@@ -255,7 +312,7 @@ func printTextDigest(followups []models.FollowupContact) error {
 	return nil
 }
 
-func printJSONDigest(followups []models.FollowupContact) error {
+func printJSONDigest(followups []*charm.FollowupContact) error {
 	// Simple JSON output for webhook integration
 	fmt.Printf("{\"date\":\"%s\",\"followups\":[", time.Now().Format("2006-01-02"))
 	for i, f := range followups {
@@ -269,7 +326,7 @@ func printJSONDigest(followups []models.FollowupContact) error {
 	return nil
 }
 
-func printHTMLDigest(followups []models.FollowupContact) error {
+func printHTMLDigest(followups []*charm.FollowupContact) error {
 	fmt.Println("<html><body>")
 	fmt.Printf("<h1>Follow-Ups for %s</h1>\n", time.Now().Format("2006-01-02"))
 	fmt.Println("<table border='1'>")

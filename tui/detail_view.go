@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
 
-	"github.com/harperreed/pagen/db"
+	"github.com/harperreed/pagen/charm"
 )
 
 var (
@@ -52,7 +52,7 @@ func (m Model) renderContactDetail() string {
 		return fmt.Sprintf("Error: invalid ID: %v", err)
 	}
 
-	contact, err := db.GetContact(m.db, id)
+	contact, err := m.client.GetContact(id)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -63,11 +63,9 @@ func (m Model) renderContactDetail() string {
 	s.WriteString(m.renderField("Email", contact.Email))
 	s.WriteString(m.renderField("Phone", contact.Phone))
 
-	if contact.CompanyID != nil {
-		company, _ := db.GetCompany(m.db, *contact.CompanyID)
-		if company != nil {
-			s.WriteString(m.renderField("Company", company.Name))
-		}
+	// Company name is denormalized in charm model
+	if contact.CompanyName != "" {
+		s.WriteString(m.renderField("Company", contact.CompanyName))
 	}
 
 	if contact.LastContactedAt != nil {
@@ -81,7 +79,7 @@ func (m Model) renderContactDetail() string {
 	s.WriteString(lipgloss.NewStyle().Bold(true).Render("RELATIONSHIPS"))
 	s.WriteString("\n")
 
-	relationships, _ := db.FindContactRelationships(m.db, id, "")
+	relationships, _ := m.client.ListRelationshipsForContact(id)
 	for _, rel := range relationships {
 		s.WriteString(fmt.Sprintf("  • %s (%s)\n", rel.Context, rel.RelationshipType))
 	}
@@ -95,7 +93,7 @@ func (m Model) renderCompanyDetail() string {
 		return fmt.Sprintf("Error: invalid ID: %v", err)
 	}
 
-	company, err := db.GetCompany(m.db, id)
+	company, err := m.client.GetCompany(id)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -112,7 +110,10 @@ func (m Model) renderCompanyDetail() string {
 	s.WriteString(lipgloss.NewStyle().Bold(true).Render("CONTACTS"))
 	s.WriteString("\n")
 
-	contacts, _ := db.FindContacts(m.db, "", &id, 100)
+	contacts, _ := m.client.ListContacts(&charm.ContactFilter{
+		CompanyID: &id,
+		Limit:     100,
+	})
 	for _, contact := range contacts {
 		s.WriteString(fmt.Sprintf("  • %s (%s)\n", contact.Name, contact.Email))
 	}
@@ -126,7 +127,7 @@ func (m Model) renderDealDetail() string {
 		return fmt.Sprintf("Error: invalid ID: %v", err)
 	}
 
-	deal, err := db.GetDeal(m.db, id)
+	deal, err := m.client.GetDeal(id)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -135,16 +136,13 @@ func (m Model) renderDealDetail() string {
 
 	s.WriteString(m.renderField("Title", deal.Title))
 
-	company, _ := db.GetCompany(m.db, deal.CompanyID)
-	if company != nil {
-		s.WriteString(m.renderField("Company", company.Name))
+	// Company and contact names are denormalized in charm model
+	if deal.CompanyName != "" {
+		s.WriteString(m.renderField("Company", deal.CompanyName))
 	}
 
-	if deal.ContactID != nil {
-		contact, _ := db.GetContact(m.db, *deal.ContactID)
-		if contact != nil {
-			s.WriteString(m.renderField("Contact", contact.Name))
-		}
+	if deal.ContactName != "" {
+		s.WriteString(m.renderField("Contact", deal.ContactName))
 	}
 
 	s.WriteString(m.renderField("Stage", deal.Stage))
@@ -159,7 +157,7 @@ func (m Model) renderDealDetail() string {
 	s.WriteString(lipgloss.NewStyle().Bold(true).Render("NOTES"))
 	s.WriteString("\n")
 
-	notes, _ := db.GetDealNotes(m.db, id)
+	notes, _ := m.client.ListDealNotes(id)
 	for _, note := range notes {
 		s.WriteString(fmt.Sprintf("  • [%s] %s\n", note.CreatedAt.Format("2006-01-02"), note.Content))
 	}

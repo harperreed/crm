@@ -8,8 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
+	"github.com/harperreed/pagen/charm"
 )
 
 func (m Model) renderEditView() string {
@@ -129,18 +128,16 @@ func (m *Model) initContactForm() {
 	// If editing, populate fields
 	if m.selectedID != "" {
 		id, _ := uuid.Parse(m.selectedID)
-		contact, _ := db.GetContact(m.db, id)
+		contact, _ := m.client.GetContact(id)
 		if contact != nil {
 			inputs[0].SetValue(contact.Name)
 			inputs[1].SetValue(contact.Email)
 			inputs[2].SetValue(contact.Phone)
 			inputs[4].SetValue(contact.Notes)
 
-			if contact.CompanyID != nil {
-				company, _ := db.GetCompany(m.db, *contact.CompanyID)
-				if company != nil {
-					inputs[3].SetValue(company.Name)
-				}
+			// Company name is denormalized in charm model
+			if contact.CompanyName != "" {
+				inputs[3].SetValue(contact.CompanyName)
 			}
 		}
 	}
@@ -170,7 +167,7 @@ func (m *Model) initCompanyForm() {
 	// If editing, populate fields
 	if m.selectedID != "" {
 		id, _ := uuid.Parse(m.selectedID)
-		company, _ := db.GetCompany(m.db, id)
+		company, _ := m.client.GetCompany(id)
 		if company != nil {
 			inputs[0].SetValue(company.Name)
 			inputs[1].SetValue(company.Domain)
@@ -212,23 +209,20 @@ func (m *Model) initDealForm() {
 	// If editing, populate fields
 	if m.selectedID != "" {
 		id, _ := uuid.Parse(m.selectedID)
-		deal, _ := db.GetDeal(m.db, id)
+		deal, _ := m.client.GetDeal(id)
 		if deal != nil {
 			inputs[0].SetValue(deal.Title)
 			inputs[3].SetValue(deal.Stage)
 			inputs[4].SetValue(fmt.Sprintf("%d", deal.Amount))
 			inputs[5].SetValue(deal.Currency)
 
-			company, _ := db.GetCompany(m.db, deal.CompanyID)
-			if company != nil {
-				inputs[1].SetValue(company.Name)
+			// Company and contact names are denormalized in charm model
+			if deal.CompanyName != "" {
+				inputs[1].SetValue(deal.CompanyName)
 			}
 
-			if deal.ContactID != nil {
-				contact, _ := db.GetContact(m.db, *deal.ContactID)
-				if contact != nil {
-					inputs[2].SetValue(contact.Name)
-				}
+			if deal.ContactName != "" {
+				inputs[2].SetValue(deal.ContactName)
 			}
 		}
 	}
@@ -259,7 +253,8 @@ func (m Model) saveEntity() error {
 }
 
 func (m Model) saveContact() error {
-	contact := &models.Contact{
+	contact := &charm.Contact{
+		ID:    uuid.New(),
 		Name:  m.formInputs[0].Value(),
 		Email: m.formInputs[1].Value(),
 		Phone: m.formInputs[2].Value(),
@@ -267,38 +262,49 @@ func (m Model) saveContact() error {
 	}
 
 	// Handle company lookup/creation if company_name provided
-	if m.formInputs[3].Value() != "" {
-		companyName := m.formInputs[3].Value()
-		company, err := db.FindCompanyByName(m.db, companyName)
+	companyName := m.formInputs[3].Value()
+	if companyName != "" {
+		// Try to find existing company by name
+		companies, err := m.client.ListCompanies(&charm.CompanyFilter{
+			Query: companyName,
+			Limit: 1,
+		})
 		if err != nil {
 			return fmt.Errorf("failed to lookup company: %w", err)
 		}
 
-		if company == nil {
+		if len(companies) > 0 {
+			// Use existing company
+			contact.CompanyID = &companies[0].ID
+			contact.CompanyName = companies[0].Name
+		} else {
 			// Create new company
-			company = &models.Company{
+			newCompany := &charm.Company{
+				ID:   uuid.New(),
 				Name: companyName,
 			}
-			if err := db.CreateCompany(m.db, company); err != nil {
+			if err := m.client.CreateCompany(newCompany); err != nil {
 				return fmt.Errorf("failed to create company: %w", err)
 			}
+			contact.CompanyID = &newCompany.ID
+			contact.CompanyName = newCompany.Name
 		}
-
-		contact.CompanyID = &company.ID
 	}
 
 	if m.selectedID == "" {
 		// Create new
-		return db.CreateContact(m.db, contact)
+		return m.client.CreateContact(contact)
 	} else {
 		// Update existing
 		id, _ := uuid.Parse(m.selectedID)
-		return db.UpdateContact(m.db, id, contact)
+		contact.ID = id
+		return m.client.UpdateContact(contact)
 	}
 }
 
 func (m Model) saveCompany() error {
-	company := &models.Company{
+	company := &charm.Company{
+		ID:       uuid.New(),
 		Name:     m.formInputs[0].Value(),
 		Domain:   m.formInputs[1].Value(),
 		Industry: m.formInputs[2].Value(),
@@ -307,11 +313,12 @@ func (m Model) saveCompany() error {
 
 	if m.selectedID == "" {
 		// Create new
-		return db.CreateCompany(m.db, company)
+		return m.client.CreateCompany(company)
 	} else {
-		// Update existing
+		// Update existing - use the existing ID
 		id, _ := uuid.Parse(m.selectedID)
-		return db.UpdateCompany(m.db, id, company)
+		company.ID = id
+		return m.client.UpdateCompany(company)
 	}
 }
 

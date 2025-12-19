@@ -4,60 +4,44 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"testing"
 
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/google/uuid"
+	"github.com/harperreed/pagen/charm"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func setupQueryTestDB(t *testing.T) (*sql.DB, func()) {
-	database, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("Failed to create in-memory database: %v", err)
-	}
-
-	if err := db.InitSchema(database); err != nil {
-		t.Fatalf("Failed to initialize database: %v", err)
-	}
-
-	cleanup := func() {
-		_ = database.Close()
-	}
-
-	return database, cleanup
-}
-
 func TestQueryCRMContacts(t *testing.T) {
-	database, cleanup := setupQueryTestDB(t)
+	client, cleanup := charm.NewTestClient(t)
 	defer cleanup()
 
 	// Create test company and contacts
-	company := &models.Company{Name: "Test Corp"}
-	if err := db.CreateCompany(database, company); err != nil {
+	company := &charm.Company{ID: uuid.New(), Name: "Test Corp"}
+	if err := client.CreateCompany(company); err != nil {
 		t.Fatalf("Failed to create company: %v", err)
 	}
 
-	contact1 := &models.Contact{
-		Name:      "Alice Smith",
-		Email:     "alice@example.com",
-		CompanyID: &company.ID,
+	contact1 := &charm.Contact{
+		ID:          uuid.New(),
+		Name:        "Alice Smith",
+		Email:       "alice@example.com",
+		CompanyID:   &company.ID,
+		CompanyName: company.Name,
 	}
-	if err := db.CreateContact(database, contact1); err != nil {
+	if err := client.CreateContact(contact1); err != nil {
 		t.Fatalf("Failed to create contact1: %v", err)
 	}
 
-	contact2 := &models.Contact{
+	contact2 := &charm.Contact{
+		ID:    uuid.New(),
 		Name:  "Bob Jones",
 		Email: "bob@example.com",
 	}
-	if err := db.CreateContact(database, contact2); err != nil {
+	if err := client.CreateContact(contact2); err != nil {
 		t.Fatalf("Failed to create contact2: %v", err)
 	}
 
-	handlers := NewQueryHandlers(database)
+	handlers := NewQueryHandlers(client)
 
 	// Test: Query all contacts
 	t.Run("QueryAllContacts", func(t *testing.T) {
@@ -124,27 +108,29 @@ func TestQueryCRMContacts(t *testing.T) {
 }
 
 func TestQueryCRMCompanies(t *testing.T) {
-	database, cleanup := setupQueryTestDB(t)
+	client, cleanup := charm.NewTestClient(t)
 	defer cleanup()
 
 	// Create test companies
-	company1 := &models.Company{
+	company1 := &charm.Company{
+		ID:     uuid.New(),
 		Name:   "Alpha Corp",
 		Domain: "alpha.com",
 	}
-	if err := db.CreateCompany(database, company1); err != nil {
+	if err := client.CreateCompany(company1); err != nil {
 		t.Fatalf("Failed to create company1: %v", err)
 	}
 
-	company2 := &models.Company{
+	company2 := &charm.Company{
+		ID:     uuid.New(),
 		Name:   "Beta Inc",
 		Domain: "beta.com",
 	}
-	if err := db.CreateCompany(database, company2); err != nil {
+	if err := client.CreateCompany(company2); err != nil {
 		t.Fatalf("Failed to create company2: %v", err)
 	}
 
-	handlers := NewQueryHandlers(database)
+	handlers := NewQueryHandlers(client)
 
 	// Test: Query all companies
 	t.Run("QueryAllCompanies", func(t *testing.T) {
@@ -188,38 +174,42 @@ func TestQueryCRMCompanies(t *testing.T) {
 }
 
 func TestQueryCRMDeals(t *testing.T) {
-	database, cleanup := setupQueryTestDB(t)
+	client, cleanup := charm.NewTestClient(t)
 	defer cleanup()
 
 	// Create test company and deals
-	company := &models.Company{Name: "Deal Corp"}
-	if err := db.CreateCompany(database, company); err != nil {
+	company := &charm.Company{ID: uuid.New(), Name: "Deal Corp"}
+	if err := client.CreateCompany(company); err != nil {
 		t.Fatalf("Failed to create company: %v", err)
 	}
 
-	deal1 := &models.Deal{
-		Title:     "Big Deal",
-		Amount:    100000,
-		Currency:  "USD",
-		Stage:     models.StageProspecting,
-		CompanyID: company.ID,
+	deal1 := &charm.Deal{
+		ID:          uuid.New(),
+		Title:       "Big Deal",
+		Amount:      100000,
+		Currency:    "USD",
+		Stage:       charm.StageProspecting,
+		CompanyID:   company.ID,
+		CompanyName: company.Name,
 	}
-	if err := db.CreateDeal(database, deal1); err != nil {
+	if err := client.CreateDeal(deal1); err != nil {
 		t.Fatalf("Failed to create deal1: %v", err)
 	}
 
-	deal2 := &models.Deal{
-		Title:     "Small Deal",
-		Amount:    5000,
-		Currency:  "USD",
-		Stage:     models.StageNegotiation,
-		CompanyID: company.ID,
+	deal2 := &charm.Deal{
+		ID:          uuid.New(),
+		Title:       "Small Deal",
+		Amount:      5000,
+		Currency:    "USD",
+		Stage:       charm.StageNegotiation,
+		CompanyID:   company.ID,
+		CompanyName: company.Name,
 	}
-	if err := db.CreateDeal(database, deal2); err != nil {
+	if err := client.CreateDeal(deal2); err != nil {
 		t.Fatalf("Failed to create deal2: %v", err)
 	}
 
-	handlers := NewQueryHandlers(database)
+	handlers := NewQueryHandlers(client)
 
 	// Test: Query all deals
 	t.Run("QueryAllDeals", func(t *testing.T) {
@@ -247,7 +237,7 @@ func TestQueryCRMDeals(t *testing.T) {
 		input := QueryCRMInput{
 			EntityType: "deal",
 			Filters: map[string]interface{}{
-				"stage": models.StageProspecting,
+				"stage": charm.StageProspecting,
 			},
 			Limit: 10,
 		}
@@ -305,32 +295,33 @@ func TestQueryCRMDeals(t *testing.T) {
 }
 
 func TestQueryCRMRelationships(t *testing.T) {
-	database, cleanup := setupQueryTestDB(t)
+	client, cleanup := charm.NewTestClient(t)
 	defer cleanup()
 
 	// Create test contacts
-	contact1 := &models.Contact{Name: "Alice"}
-	if err := db.CreateContact(database, contact1); err != nil {
+	contact1 := &charm.Contact{ID: uuid.New(), Name: "Alice"}
+	if err := client.CreateContact(contact1); err != nil {
 		t.Fatalf("Failed to create contact1: %v", err)
 	}
 
-	contact2 := &models.Contact{Name: "Bob"}
-	if err := db.CreateContact(database, contact2); err != nil {
+	contact2 := &charm.Contact{ID: uuid.New(), Name: "Bob"}
+	if err := client.CreateContact(contact2); err != nil {
 		t.Fatalf("Failed to create contact2: %v", err)
 	}
 
 	// Create relationship
-	rel := &models.Relationship{
+	rel := &charm.Relationship{
+		ID:               uuid.New(),
 		ContactID1:       contact1.ID,
 		ContactID2:       contact2.ID,
 		RelationshipType: "colleague",
 		Context:          "Work together at XYZ",
 	}
-	if err := db.CreateRelationship(database, rel); err != nil {
+	if err := client.CreateRelationship(rel); err != nil {
 		t.Fatalf("Failed to create relationship: %v", err)
 	}
 
-	handlers := NewQueryHandlers(database)
+	handlers := NewQueryHandlers(client)
 
 	// Test: Query relationships by contact_id
 	t.Run("QueryRelationshipsByContactID", func(t *testing.T) {
@@ -379,10 +370,10 @@ func TestQueryCRMRelationships(t *testing.T) {
 }
 
 func TestQueryCRMInvalidEntityType(t *testing.T) {
-	database, cleanup := setupQueryTestDB(t)
+	client, cleanup := charm.NewTestClient(t)
 	defer cleanup()
 
-	handlers := NewQueryHandlers(database)
+	handlers := NewQueryHandlers(client)
 
 	input := QueryCRMInput{
 		EntityType: "invalid_type",

@@ -4,21 +4,21 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/harperreed/pagen/charm"
 	"github.com/harperreed/pagen/viz"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type VizHandlers struct {
-	db *sql.DB
+	client *charm.Client
 }
 
-func NewVizHandlers(database *sql.DB) *VizHandlers {
-	return &VizHandlers{db: database}
+func NewVizHandlers(client *charm.Client) *VizHandlers {
+	return &VizHandlers{client: client}
 }
 
 type GenerateGraphInput struct {
@@ -38,7 +38,7 @@ func (h *VizHandlers) GenerateGraph(_ context.Context, request *mcp.CallToolRequ
 		return nil, GenerateGraphOutput{}, fmt.Errorf("type is required")
 	}
 
-	generator := viz.NewGraphGenerator(h.db)
+	generator := viz.NewGraphGenerator(h.client)
 	var dot string
 	var err error
 

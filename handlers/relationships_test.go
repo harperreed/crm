@@ -6,15 +6,15 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
+	"github.com/harperreed/pagen/charm"
 )
 
 func TestLinkContacts(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewRelationshipHandlers(database)
-	contactHandler := NewContactHandlers(database)
+	handler := NewRelationshipHandlers(client)
+	contactHandler := NewContactHandlers(client)
 
 	// Create two contacts
 	contact1Result, _ := contactHandler.AddContact_Legacy(map[string]interface{}{
@@ -66,21 +66,21 @@ func TestLinkContacts(t *testing.T) {
 	contactID2UUID, _ := uuid.Parse(contact2ID)
 
 	// Find the relationship in database to verify ordering
-	rels, err := db.FindRelationshipsBetween(database, contactID1UUID, contactID2UUID)
+	rel, err := client.GetRelationshipBetween(contactID1UUID, contactID2UUID)
 	if err != nil {
 		t.Fatalf("Failed to find relationship: %v", err)
 	}
-	if len(rels) != 1 {
-		t.Errorf("Expected 1 relationship, got %d", len(rels))
+	if rel == nil {
+		t.Error("Expected to find a relationship, got nil")
 	}
 }
 
 func TestLinkContactsWithoutOptionalFields(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewRelationshipHandlers(database)
-	contactHandler := NewContactHandlers(database)
+	handler := NewRelationshipHandlers(client)
+	contactHandler := NewContactHandlers(client)
 
 	// Create two contacts
 	contact1Result, _ := contactHandler.AddContact_Legacy(map[string]interface{}{
@@ -117,10 +117,10 @@ func TestLinkContactsWithoutOptionalFields(t *testing.T) {
 }
 
 func TestLinkContactsValidation(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewRelationshipHandlers(database)
+	handler := NewRelationshipHandlers(client)
 
 	// Missing contact_id_1
 	input := map[string]interface{}{
@@ -166,11 +166,11 @@ func TestLinkContactsValidation(t *testing.T) {
 }
 
 func TestFindContactRelationships(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewRelationshipHandlers(database)
-	contactHandler := NewContactHandlers(database)
+	handler := NewRelationshipHandlers(client)
+	contactHandler := NewContactHandlers(client)
 
 	// Create three contacts
 	contact1Result, _ := contactHandler.AddContact_Legacy(map[string]interface{}{
@@ -248,11 +248,11 @@ func TestFindContactRelationships(t *testing.T) {
 }
 
 func TestFindContactRelationshipsWithTypeFilter(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewRelationshipHandlers(database)
-	contactHandler := NewContactHandlers(database)
+	handler := NewRelationshipHandlers(client)
+	contactHandler := NewContactHandlers(client)
 
 	// Create contacts
 	contact1Result, _ := contactHandler.AddContact_Legacy(map[string]interface{}{
@@ -312,11 +312,11 @@ func TestFindContactRelationshipsWithTypeFilter(t *testing.T) {
 }
 
 func TestFindContactRelationshipsBidirectional(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewRelationshipHandlers(database)
-	contactHandler := NewContactHandlers(database)
+	handler := NewRelationshipHandlers(client)
+	contactHandler := NewContactHandlers(client)
 
 	// Create two contacts
 	contact1Result, _ := contactHandler.AddContact_Legacy(map[string]interface{}{
@@ -379,11 +379,11 @@ func TestFindContactRelationshipsBidirectional(t *testing.T) {
 }
 
 func TestRemoveRelationship(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewRelationshipHandlers(database)
-	contactHandler := NewContactHandlers(database)
+	handler := NewRelationshipHandlers(client)
+	contactHandler := NewContactHandlers(client)
 
 	// Create two contacts
 	contact1Result, _ := contactHandler.AddContact_Legacy(map[string]interface{}{
@@ -439,10 +439,10 @@ func TestRemoveRelationship(t *testing.T) {
 }
 
 func TestRemoveRelationshipValidation(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewRelationshipHandlers(database)
+	handler := NewRelationshipHandlers(client)
 
 	// Missing relationship_id
 	input := map[string]interface{}{}

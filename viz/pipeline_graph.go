@@ -7,8 +7,7 @@ import (
 
 	"github.com/goccy/go-graphviz"
 	"github.com/goccy/go-graphviz/cgraph"
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
+	"github.com/harperreed/pagen/charm"
 )
 
 func (g *GraphGenerator) GeneratePipelineGraph() (string, error) {
@@ -29,22 +28,22 @@ func (g *GraphGenerator) GeneratePipelineGraph() (string, error) {
 	graph.SetRankDir(cgraph.LRRank)
 
 	// Get all deals
-	deals, err := db.FindDeals(g.db, "", nil, 10000)
+	deals, err := g.client.ListDeals(&charm.DealFilter{Limit: 10000})
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch deals: %w", err)
 	}
 
 	// Group by stage
 	stages := []string{
-		models.StageProspecting,
-		models.StageQualification,
-		models.StageProposal,
-		models.StageNegotiation,
-		models.StageClosedWon,
-		models.StageClosedLost,
+		charm.StageProspecting,
+		charm.StageQualification,
+		charm.StageProposal,
+		charm.StageNegotiation,
+		charm.StageClosedWon,
+		charm.StageClosedLost,
 	}
 
-	dealsByStage := make(map[string][]models.Deal)
+	dealsByStage := make(map[string][]*charm.Deal)
 	for _, deal := range deals {
 		stage := deal.Stage
 		if stage == "" {

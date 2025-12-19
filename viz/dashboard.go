@@ -3,13 +3,11 @@
 package viz
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
+	"github.com/harperreed/pagen/charm"
 )
 
 type DashboardStats struct {
@@ -50,13 +48,13 @@ type StaleDeal struct {
 	DaysSince int
 }
 
-func GenerateDashboardStats(database *sql.DB) (*DashboardStats, error) {
+func GenerateDashboardStats(client *charm.Client) (*DashboardStats, error) {
 	stats := &DashboardStats{
 		PipelineByStage: make(map[string]PipelineStageStats),
 	}
 
 	// Get pipeline stats
-	deals, err := db.FindDeals(database, "", nil, 10000)
+	deals, err := client.ListDeals(&charm.DealFilter{Limit: 10000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch deals: %w", err)
 	}
@@ -77,14 +75,14 @@ func GenerateDashboardStats(database *sql.DB) (*DashboardStats, error) {
 	stats.TotalDeals = len(deals)
 
 	// Get contact stats
-	contacts, err := db.FindContacts(database, "", nil, 10000)
+	contacts, err := client.ListContacts(&charm.ContactFilter{Limit: 10000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch contacts: %w", err)
 	}
 	stats.TotalContacts = len(contacts)
 
 	// Get company stats
-	companies, err := db.FindCompanies(database, "", 10000)
+	companies, err := client.ListCompanies(&charm.CompanyFilter{Limit: 10000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch companies: %w", err)
 	}
@@ -160,12 +158,12 @@ func RenderDashboard(stats *DashboardStats) string {
 func renderPipeline(out *strings.Builder, pipeline map[string]PipelineStageStats) {
 	// Define stage order
 	stages := []string{
-		models.StageProspecting,
-		models.StageQualification,
-		models.StageProposal,
-		models.StageNegotiation,
-		models.StageClosedWon,
-		models.StageClosedLost,
+		charm.StageProspecting,
+		charm.StageQualification,
+		charm.StageProposal,
+		charm.StageNegotiation,
+		charm.StageClosedWon,
+		charm.StageClosedLost,
 	}
 
 	// Find max count for scaling

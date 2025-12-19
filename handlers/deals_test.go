@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
+	"github.com/harperreed/pagen/charm"
 )
 
 func TestCreateDeal(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	// Test valid deal creation with company_name lookup/create
 	input := map[string]interface{}{
@@ -53,13 +53,13 @@ func TestCreateDeal(t *testing.T) {
 }
 
 func TestCreateDealWithContactName(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	// Create a contact first
-	contactHandler := NewContactHandlers(database)
+	contactHandler := NewContactHandlers(client)
 	_, _ = contactHandler.AddContact_Legacy(map[string]interface{}{
 		"name":  "John Doe",
 		"email": "john@example.com",
@@ -89,10 +89,10 @@ func TestCreateDealWithContactName(t *testing.T) {
 }
 
 func TestCreateDealWithoutContact(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	// Create deal without contact
 	input := map[string]interface{}{
@@ -117,10 +117,10 @@ func TestCreateDealWithoutContact(t *testing.T) {
 }
 
 func TestCreateDealWithInitialNote(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	// Create deal with initial note
 	input := map[string]interface{}{
@@ -142,7 +142,7 @@ func TestCreateDealWithInitialNote(t *testing.T) {
 
 	// Verify note was created
 	dealID, _ := uuid.Parse(data["id"].(string))
-	notes, err := db.GetDealNotes(database, dealID)
+	notes, err := client.ListDealNotes(dealID)
 	if err != nil {
 		t.Fatalf("Failed to get deal notes: %v", err)
 	}
@@ -157,10 +157,10 @@ func TestCreateDealWithInitialNote(t *testing.T) {
 }
 
 func TestCreateDealDefaults(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	// Create deal with minimal input (defaults should be applied)
 	input := map[string]interface{}{
@@ -188,10 +188,10 @@ func TestCreateDealDefaults(t *testing.T) {
 }
 
 func TestCreateDealValidation(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	// Missing required title
 	input := map[string]interface{}{
@@ -215,10 +215,10 @@ func TestCreateDealValidation(t *testing.T) {
 }
 
 func TestUpdateDeal(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	// Create deal first
 	createResult, _ := handler.CreateDeal_Legacy(map[string]interface{}{
@@ -262,10 +262,10 @@ func TestUpdateDeal(t *testing.T) {
 }
 
 func TestUpdateDealStage(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	// Create deal first
 	createResult, _ := handler.CreateDeal_Legacy(map[string]interface{}{
@@ -297,10 +297,10 @@ func TestUpdateDealStage(t *testing.T) {
 }
 
 func TestUpdateDealExpectedCloseDate(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	// Create deal first
 	createResult, _ := handler.CreateDeal_Legacy(map[string]interface{}{
@@ -333,10 +333,10 @@ func TestUpdateDealExpectedCloseDate(t *testing.T) {
 }
 
 func TestUpdateDealNotFound(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	input := map[string]interface{}{
 		"id":     uuid.New().String(),
@@ -350,10 +350,10 @@ func TestUpdateDealNotFound(t *testing.T) {
 }
 
 func TestUpdateDealInvalidStage(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	// Create deal first
 	createResult, _ := handler.CreateDeal_Legacy(map[string]interface{}{
@@ -376,10 +376,10 @@ func TestUpdateDealInvalidStage(t *testing.T) {
 }
 
 func TestAddDealNote(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	// Create deal first
 	createResult, _ := handler.CreateDeal_Legacy(map[string]interface{}{
@@ -414,7 +414,7 @@ func TestAddDealNote(t *testing.T) {
 
 	// Verify deal's last_activity_at was updated
 	dealUUID, _ := uuid.Parse(dealID)
-	deal, _ := db.GetDeal(database, dealUUID)
+	deal, _ := client.GetDeal(dealUUID)
 
 	originalLastActivity := dealData["last_activity_at"].(time.Time)
 	if !deal.LastActivityAt.After(originalLastActivity) {
@@ -423,13 +423,13 @@ func TestAddDealNote(t *testing.T) {
 }
 
 func TestAddDealNoteUpdatesContactLastContactedAt(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	// Create contact first
-	contactHandler := NewContactHandlers(database)
+	contactHandler := NewContactHandlers(client)
 	contactResult, _ := contactHandler.AddContact_Legacy(map[string]interface{}{
 		"name":  "Jane Smith",
 		"email": "jane@example.com",
@@ -462,7 +462,7 @@ func TestAddDealNoteUpdatesContactLastContactedAt(t *testing.T) {
 
 	// Verify contact's last_contacted_at was updated
 	contactUUID, _ := uuid.Parse(contactID)
-	contact, _ := db.GetContact(database, contactUUID)
+	contact, _ := client.GetContact(contactUUID)
 
 	if contact.LastContactedAt == nil {
 		t.Error("Contact's last_contacted_at should be set after adding deal note")
@@ -470,10 +470,10 @@ func TestAddDealNoteUpdatesContactLastContactedAt(t *testing.T) {
 }
 
 func TestAddDealNoteNotFound(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewDealHandlers(database)
+	handler := NewDealHandlers(client)
 
 	input := map[string]interface{}{
 		"deal_id": uuid.New().String(),

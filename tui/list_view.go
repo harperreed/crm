@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/harperreed/pagen/db"
+	"github.com/harperreed/pagen/charm"
 )
 
 func (m Model) renderListView() string {
@@ -73,7 +73,10 @@ func (m Model) renderTable() string {
 }
 
 func (m Model) renderContactsTable() string {
-	contacts, err := db.FindContacts(m.db, m.searchQuery, nil, 100)
+	contacts, err := m.client.ListContacts(&charm.ContactFilter{
+		Query: m.searchQuery,
+		Limit: 100,
+	})
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -86,18 +89,11 @@ func (m Model) renderContactsTable() string {
 
 	var rows []table.Row
 	for _, contact := range contacts {
-		companyName := ""
-		if contact.CompanyID != nil {
-			company, _ := db.GetCompany(m.db, *contact.CompanyID)
-			if company != nil {
-				companyName = company.Name
-			}
-		}
-
+		// Company name is denormalized in charm model
 		rows = append(rows, table.Row{
 			contact.Name,
 			contact.Email,
-			companyName,
+			contact.CompanyName,
 		})
 	}
 
@@ -117,7 +113,10 @@ func (m Model) renderContactsTable() string {
 }
 
 func (m Model) renderCompaniesTable() string {
-	companies, err := db.FindCompanies(m.db, m.searchQuery, 100)
+	companies, err := m.client.ListCompanies(&charm.CompanyFilter{
+		Query: m.searchQuery,
+		Limit: 100,
+	})
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -152,7 +151,9 @@ func (m Model) renderCompaniesTable() string {
 }
 
 func (m Model) renderDealsTable() string {
-	deals, err := db.FindDeals(m.db, "", nil, 100)
+	deals, err := m.client.ListDeals(&charm.DealFilter{
+		Limit: 100,
+	})
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -166,17 +167,12 @@ func (m Model) renderDealsTable() string {
 
 	var rows []table.Row
 	for _, deal := range deals {
-		company, _ := db.GetCompany(m.db, deal.CompanyID)
-		companyName := ""
-		if company != nil {
-			companyName = company.Name
-		}
-
+		// Company name is denormalized in charm model
 		amountStr := fmt.Sprintf("$%dK", deal.Amount/100000)
 
 		rows = append(rows, table.Row{
 			deal.Title,
-			companyName,
+			deal.CompanyName,
 			deal.Stage,
 			amountStr,
 		})
@@ -253,17 +249,25 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) getSelectedID() string {
 	switch m.entityType {
 	case EntityContacts:
-		contacts, _ := db.FindContacts(m.db, m.searchQuery, nil, 100)
+		contacts, _ := m.client.ListContacts(&charm.ContactFilter{
+			Query: m.searchQuery,
+			Limit: 100,
+		})
 		if m.selectedRow < len(contacts) {
 			return contacts[m.selectedRow].ID.String()
 		}
 	case EntityCompanies:
-		companies, _ := db.FindCompanies(m.db, m.searchQuery, 100)
+		companies, _ := m.client.ListCompanies(&charm.CompanyFilter{
+			Query: m.searchQuery,
+			Limit: 100,
+		})
 		if m.selectedRow < len(companies) {
 			return companies[m.selectedRow].ID.String()
 		}
 	case EntityDeals:
-		deals, _ := db.FindDeals(m.db, "", nil, 100)
+		deals, _ := m.client.ListDeals(&charm.DealFilter{
+			Limit: 100,
+		})
 		if m.selectedRow < len(deals) {
 			return deals[m.selectedRow].ID.String()
 		}

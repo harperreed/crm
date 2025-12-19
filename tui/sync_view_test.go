@@ -1,36 +1,21 @@
-// ABOUTME: Tests for sync view functionality
-// ABOUTME: Verifies sync state display and command handling
+// ABOUTME: Tests for Charm KV sync view functionality
+// ABOUTME: Verifies sync status display and command handling
 package tui
 
 import (
-	"database/sql"
 	"testing"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/harperreed/pagen/db"
+	"github.com/harperreed/pagen/charm"
 )
 
-func setupTestDB(t *testing.T) *sql.DB {
-	database, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open test db: %v", err)
-	}
-	if err := db.InitSchema(database); err != nil {
-		t.Fatalf("Failed to init schema: %v", err)
-	}
-	return database
-}
-
 func TestSyncViewRendering(t *testing.T) {
-	// Create test database
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
 	// Create model
-	m := NewModel(database)
+	m := NewModel(client)
 	m.entityType = EntitySync
 
 	// Render the view
@@ -42,67 +27,66 @@ func TestSyncViewRendering(t *testing.T) {
 	}
 
 	// Should contain title
-	if !contains(output, "Google Sync Management") && !contains(output, "Sync Management") {
-		t.Error("Sync view should contain title")
+	if !contains(output, "Charm KV Sync") {
+		t.Error("Sync view should contain title 'Charm KV Sync'")
+	}
+
+	// Should show configuration section
+	if !contains(output, "Configuration") {
+		t.Error("Sync view should contain Configuration section")
 	}
 }
 
-func TestSyncViewWithStates(t *testing.T) {
-	// Create test database
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
-
-	// Add some sync states
-	_ = db.UpdateSyncStatus(database, "contacts", "idle", nil)
-	_ = db.UpdateSyncToken(database, "contacts", "test-token")
-
-	errMsg := "test error"
-	_ = db.UpdateSyncStatus(database, "gmail", "error", &errMsg)
+func TestSyncViewShowsStatus(t *testing.T) {
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
 	// Create model
-	m := NewModel(database)
+	m := NewModel(client)
 	m.entityType = EntitySync
-
-	// Load states
-	m.loadSyncStates()
-
-	// Verify states were loaded
-	if len(m.syncStates) == 0 {
-		t.Error("Should have loaded sync states")
-	}
 
 	// Render the view
 	output := m.renderSyncView()
 
-	// Should show service names
-	if !contains(output, "Contacts") && !contains(output, "contacts") {
-		t.Error("Should show contacts service")
+	// Should show server
+	if !contains(output, "Server:") {
+		t.Error("Should show server field")
+	}
+
+	// Should show status (linked/unlinked)
+	if !contains(output, "Status:") {
+		t.Error("Should show status field")
+	}
+
+	// Should show auto-sync status
+	if !contains(output, "Auto-sync:") {
+		t.Error("Should show auto-sync field")
 	}
 }
 
 func TestSyncKeyNavigation(t *testing.T) {
-	// Create test database
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	m := NewModel(database)
+	m := NewModel(client)
 	m.entityType = EntitySync
 
-	// Test up/down navigation
-	m.selectedService = 1
-	updated, _ := m.handleSyncKeys(tea.KeyMsg{Type: tea.KeyUp})
-	m = updated.(Model)
-	if m.selectedService != 0 {
-		t.Errorf("Expected selectedService=0, got %d", m.selectedService)
-	}
-
-	updated, _ = m.handleSyncKeys(tea.KeyMsg{Type: tea.KeyDown})
+	// Test down navigation
+	m.selectedService = 0
+	updated, _ := m.handleSyncKeys(tea.KeyMsg{Type: tea.KeyDown})
 	m = updated.(Model)
 	if m.selectedService != 1 {
 		t.Errorf("Expected selectedService=1, got %d", m.selectedService)
 	}
 
-	// Test escape key
+	// Test up navigation
+	updated, _ = m.handleSyncKeys(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(Model)
+	if m.selectedService != 0 {
+		t.Errorf("Expected selectedService=0, got %d", m.selectedService)
+	}
+
+	// Test escape key goes back
 	m.viewMode = ViewList
 	m.entityType = EntitySync
 	updated, _ = m.handleSyncKeys(tea.KeyMsg{Type: tea.KeyEsc})
@@ -116,25 +100,23 @@ func TestSyncKeyNavigation(t *testing.T) {
 }
 
 func TestSyncCompleteMessage(t *testing.T) {
-	// Create test database
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	m := NewModel(database)
+	m := NewModel(client)
 
 	// Mark a sync as in progress
-	m.syncInProgress["contacts"] = true
+	m.syncInProgress["charm"] = true
 
 	// Handle completion
 	msg := SyncCompleteMsg{
-		Service: "contacts",
-		Error:   nil,
+		Error: nil,
 	}
 
 	_ = m.handleSyncComplete(msg)
 
 	// Should no longer be in progress
-	if m.syncInProgress["contacts"] {
+	if m.syncInProgress["charm"] {
 		t.Error("Sync should not be in progress after completion")
 	}
 
@@ -145,25 +127,23 @@ func TestSyncCompleteMessage(t *testing.T) {
 }
 
 func TestSyncCompleteWithError(t *testing.T) {
-	// Create test database
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	m := NewModel(database)
+	m := NewModel(client)
 
 	// Mark a sync as in progress
-	m.syncInProgress["gmail"] = true
+	m.syncInProgress["charm"] = true
 
 	// Handle completion with error
 	msg := SyncCompleteMsg{
-		Service: "gmail",
-		Error:   &testError{msg: "test sync error"},
+		Error: &testError{msg: "test sync error"},
 	}
 
 	_ = m.handleSyncComplete(msg)
 
 	// Should no longer be in progress
-	if m.syncInProgress["gmail"] {
+	if m.syncInProgress["charm"] {
 		t.Error("Sync should not be in progress after error")
 	}
 
@@ -171,60 +151,66 @@ func TestSyncCompleteWithError(t *testing.T) {
 	if len(m.syncMessages) == 0 {
 		t.Error("Should have added an error message")
 	}
+}
 
-	// Check that error was recorded in database
-	state, _ := db.GetSyncState(database, "gmail")
-	if state == nil {
-		t.Fatal("Should have sync state")
+func TestAutoSyncToggleMessage(t *testing.T) {
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
+
+	m := NewModel(client)
+
+	// Handle toggle enabled
+	msg := AutoSyncToggleMsg{
+		Enabled: true,
+		Error:   nil,
 	}
-	if state.Status != "error" {
-		t.Errorf("Expected status=error, got %s", state.Status)
+
+	_ = m.handleAutoSyncToggle(msg)
+
+	// Should have a message
+	if len(m.syncMessages) == 0 {
+		t.Error("Should have added a toggle message")
 	}
-	if state.ErrorMessage == nil || *state.ErrorMessage != "test sync error" {
-		t.Error("Should have recorded error message")
+
+	// Handle toggle disabled
+	msg = AutoSyncToggleMsg{
+		Enabled: false,
+		Error:   nil,
+	}
+
+	_ = m.handleAutoSyncToggle(msg)
+
+	// Should have two messages now
+	if len(m.syncMessages) != 2 {
+		t.Errorf("Expected 2 messages, got %d", len(m.syncMessages))
 	}
 }
 
-func TestFormatTimeSince(t *testing.T) {
-	tests := []struct {
-		name     string
-		time     time.Time
-		expected string
-	}{
-		{
-			name:     "just now",
-			time:     time.Now().Add(-30 * time.Second),
-			expected: "just now",
-		},
-		{
-			name:     "minutes ago",
-			time:     time.Now().Add(-5 * time.Minute),
-			expected: "5 minutes ago",
-		},
-		{
-			name:     "hours ago",
-			time:     time.Now().Add(-2 * time.Hour),
-			expected: "2 hours ago",
-		},
-		{
-			name:     "days ago",
-			time:     time.Now().Add(-3 * 24 * time.Hour),
-			expected: "3 days ago",
-		},
+func TestAutoSyncToggleWithError(t *testing.T) {
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
+
+	m := NewModel(client)
+
+	// Handle toggle with error
+	msg := AutoSyncToggleMsg{
+		Enabled: true,
+		Error:   &testError{msg: "failed to toggle"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := formatTimeSince(tt.time)
-			if result != tt.expected {
-				t.Errorf("Expected %q, got %q", tt.expected, result)
-			}
-		})
+	_ = m.handleAutoSyncToggle(msg)
+
+	// Should have an error message
+	if len(m.syncMessages) == 0 {
+		t.Error("Should have added an error message")
 	}
 }
 
 func TestSyncMessageAddition(t *testing.T) {
-	m := NewModel(nil)
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
+
+	m := NewModel(client)
 
 	m.addSyncMessage("Test message 1")
 	m.addSyncMessage("Test message 2")

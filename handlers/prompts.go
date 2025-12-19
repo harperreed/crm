@@ -4,22 +4,21 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
+	"github.com/harperreed/pagen/charm"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type PromptHandlers struct {
-	db *sql.DB
+	client *charm.Client
 }
 
-func NewPromptHandlers(database *sql.DB) *PromptHandlers {
-	return &PromptHandlers{db: database}
+func NewPromptHandlers(client *charm.Client) *PromptHandlers {
+	return &PromptHandlers{client: client}
 }
 
 // GetPrompt generates the prompt message based on the template.
@@ -53,22 +52,16 @@ func (h *PromptHandlers) getContactSummaryPrompt(args map[string]string) (*mcp.G
 		return nil, fmt.Errorf("invalid contact_id: %w", err)
 	}
 
-	contact, err := db.GetContact(h.db, contactID)
+	contact, err := h.client.GetContact(contactID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch contact: %w", err)
 	}
 
-	// Get company info if available
-	var companyName string
-	if contact.CompanyID != nil {
-		company, err := db.GetCompany(h.db, *contact.CompanyID)
-		if err == nil {
-			companyName = company.Name
-		}
-	}
+	// CompanyName is denormalized in charm.Contact
+	companyName := contact.CompanyName
 
 	// Get relationships
-	relationships, err := db.FindContactRelationships(h.db, contactID, "")
+	relationships, err := h.client.ListRelationshipsForContact(contactID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch relationships: %w", err)
 	}
@@ -117,7 +110,7 @@ func (h *PromptHandlers) getContactSummaryPrompt(args map[string]string) (*mcp.G
 
 func (h *PromptHandlers) getDealAnalysisPrompt(args map[string]string) (*mcp.GetPromptResult, error) {
 	// Get all deals
-	deals, err := db.FindDeals(h.db, "", nil, 10000)
+	deals, err := h.client.ListDeals(&charm.DealFilter{Limit: 10000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch deals: %w", err)
 	}
@@ -186,12 +179,12 @@ func (h *PromptHandlers) getRelationshipMapPrompt(args map[string]string) (*mcp.
 
 	switch entityType {
 	case "contact":
-		contact, err := db.GetContact(h.db, entityID)
+		contact, err := h.client.GetContact(entityID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch contact: %w", err)
 		}
 
-		relationships, err := db.FindContactRelationships(h.db, entityID, "")
+		relationships, err := h.client.ListRelationshipsForContact(entityID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch relationships: %w", err)
 		}
@@ -202,31 +195,26 @@ func (h *PromptHandlers) getRelationshipMapPrompt(args map[string]string) (*mcp.
 		if len(relationships) > 0 {
 			promptText.WriteString("Relationships:\n")
 			for _, rel := range relationships {
-				// Get the other contact's name
-				otherContactID := rel.ContactID2
+				// Get the other contact's name (denormalized in charm.Relationship)
+				otherContactName := rel.Contact2Name
 				if rel.ContactID1 != entityID {
-					otherContactID = rel.ContactID1
-				}
-				otherContact, err := db.GetContact(h.db, otherContactID)
-				contactName := "Unknown"
-				if err == nil && otherContact != nil {
-					contactName = otherContact.Name
+					otherContactName = rel.Contact1Name
 				}
 
 				if rel.RelationshipType != "" {
-					promptText.WriteString(fmt.Sprintf("  - %s (%s)\n", contactName, rel.RelationshipType))
+					promptText.WriteString(fmt.Sprintf("  - %s (%s)\n", otherContactName, rel.RelationshipType))
 				} else {
-					promptText.WriteString(fmt.Sprintf("  - %s\n", contactName))
+					promptText.WriteString(fmt.Sprintf("  - %s\n", otherContactName))
 				}
 			}
 		}
 	case "company":
-		company, err := db.GetCompany(h.db, entityID)
+		company, err := h.client.GetCompany(entityID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch company: %w", err)
 		}
 
-		contacts, err := db.FindContacts(h.db, "", &entityID, 1000)
+		contacts, err := h.client.ListContacts(&charm.ContactFilter{CompanyID: &entityID, Limit: 1000})
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch company contacts: %w", err)
 		}
@@ -266,7 +254,7 @@ func (h *PromptHandlers) getRelationshipMapPrompt(args map[string]string) (*mcp.
 
 func (h *PromptHandlers) getFollowUpSuggestionsPrompt(args map[string]string) (*mcp.GetPromptResult, error) {
 	// Get all contacts
-	contacts, err := db.FindContacts(h.db, "", nil, 10000)
+	contacts, err := h.client.ListContacts(&charm.ContactFilter{Limit: 10000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch contacts: %w", err)
 	}
@@ -332,17 +320,17 @@ func (h *PromptHandlers) getCompanyOverviewPrompt(args map[string]string) (*mcp.
 		return nil, fmt.Errorf("invalid company_id: %w", err)
 	}
 
-	company, err := db.GetCompany(h.db, companyID)
+	company, err := h.client.GetCompany(companyID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch company: %w", err)
 	}
 
-	contacts, err := db.FindContacts(h.db, "", &companyID, 1000)
+	contacts, err := h.client.ListContacts(&charm.ContactFilter{CompanyID: &companyID, Limit: 1000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch contacts: %w", err)
 	}
 
-	deals, err := db.FindDeals(h.db, "", &companyID, 1000)
+	deals, err := h.client.ListDeals(&charm.DealFilter{CompanyID: &companyID, Limit: 1000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch deals: %w", err)
 	}

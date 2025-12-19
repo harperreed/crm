@@ -9,7 +9,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
 )
 
 var (
@@ -47,21 +46,21 @@ func (m Model) renderConfirmDeleteView() string {
 
 	switch m.entityType {
 	case EntityContacts:
-		contact, err := db.GetContact(m.db, id)
+		contact, err := m.client.GetContact(id)
 		if err != nil {
 			return fmt.Sprintf("Error loading contact: %v", err)
 		}
 		entityName = contact.Name
 		entityType = "contact"
 	case EntityCompanies:
-		company, err := db.GetCompany(m.db, id)
+		company, err := m.client.GetCompany(id)
 		if err != nil {
 			return fmt.Sprintf("Error loading company: %v", err)
 		}
 		entityName = company.Name
 		entityType = "company"
 	case EntityDeals:
-		deal, err := db.GetDeal(m.db, id)
+		deal, err := m.client.GetDeal(id)
 		if err != nil {
 			return fmt.Sprintf("Error loading deal: %v", err)
 		}
@@ -135,11 +134,11 @@ func (m Model) performDelete() error {
 
 	switch m.entityType {
 	case EntityContacts:
-		return db.DeleteContact(m.db, id)
+		return m.client.DeleteContact(id)
 	case EntityCompanies:
-		return db.DeleteCompany(m.db, id)
+		return m.client.DeleteCompany(id)
 	case EntityDeals:
-		return db.DeleteDeal(m.db, id)
+		return m.client.DeleteDeal(id)
 	default:
 		return fmt.Errorf("unknown entity type")
 	}

@@ -4,21 +4,19 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
+	"github.com/harperreed/pagen/charm"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type CompanyHandlers struct {
-	db *sql.DB
+	client *charm.Client
 }
 
-func NewCompanyHandlers(database *sql.DB) *CompanyHandlers {
-	return &CompanyHandlers{db: database}
+func NewCompanyHandlers(client *charm.Client) *CompanyHandlers {
+	return &CompanyHandlers{client: client}
 }
 
 type AddCompanyInput struct {
@@ -43,14 +41,14 @@ func (h *CompanyHandlers) AddCompany(_ context.Context, request *mcp.CallToolReq
 		return nil, CompanyOutput{}, fmt.Errorf("name is required")
 	}
 
-	company := &models.Company{
+	company := &charm.Company{
 		Name:     input.Name,
 		Domain:   input.Domain,
 		Industry: input.Industry,
 		Notes:    input.Notes,
 	}
 
-	if err := db.CreateCompany(h.db, company); err != nil {
+	if err := h.client.CreateCompany(company); err != nil {
 		return nil, CompanyOutput{}, fmt.Errorf("failed to create company: %w", err)
 	}
 
@@ -67,26 +65,30 @@ type FindCompaniesOutput struct {
 }
 
 func (h *CompanyHandlers) FindCompanies(_ context.Context, request *mcp.CallToolRequest, input FindCompaniesInput) (*mcp.CallToolResult, FindCompaniesOutput, error) {
-	query := input.Query
 	limit := input.Limit
 	if limit == 0 {
 		limit = 10
 	}
 
-	companies, err := db.FindCompanies(h.db, query, limit)
+	filter := &charm.CompanyFilter{
+		Query: input.Query,
+		Limit: limit,
+	}
+
+	companies, err := h.client.ListCompanies(filter)
 	if err != nil {
 		return nil, FindCompaniesOutput{}, fmt.Errorf("failed to find companies: %w", err)
 	}
 
 	result := make([]CompanyOutput, len(companies))
 	for i, company := range companies {
-		result[i] = companyToOutput(&company)
+		result[i] = companyToOutput(company)
 	}
 
 	return nil, FindCompaniesOutput{Companies: result}, nil
 }
 
-func companyToOutput(company *models.Company) CompanyOutput {
+func companyToOutput(company *charm.Company) CompanyOutput {
 	return CompanyOutput{
 		ID:        company.ID.String(),
 		Name:      company.Name,
@@ -105,7 +107,7 @@ func (h *CompanyHandlers) AddCompany_Legacy(args map[string]interface{}) (interf
 		return nil, fmt.Errorf("name is required")
 	}
 
-	company := &models.Company{
+	company := &charm.Company{
 		Name: name,
 	}
 
@@ -121,7 +123,7 @@ func (h *CompanyHandlers) AddCompany_Legacy(args map[string]interface{}) (interf
 		company.Notes = notes
 	}
 
-	if err := db.CreateCompany(h.db, company); err != nil {
+	if err := h.client.CreateCompany(company); err != nil {
 		return nil, fmt.Errorf("failed to create company: %w", err)
 	}
 
@@ -139,20 +141,25 @@ func (h *CompanyHandlers) FindCompanies_Legacy(args map[string]interface{}) (int
 		limit = int(l)
 	}
 
-	companies, err := db.FindCompanies(h.db, query, limit)
+	filter := &charm.CompanyFilter{
+		Query: query,
+		Limit: limit,
+	}
+
+	companies, err := h.client.ListCompanies(filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find companies: %w", err)
 	}
 
 	result := make([]map[string]interface{}, len(companies))
 	for i, company := range companies {
-		result[i] = companyToMap(&company)
+		result[i] = companyToMap(company)
 	}
 
 	return result, nil
 }
 
-func companyToMap(company *models.Company) map[string]interface{} {
+func companyToMap(company *charm.Company) map[string]interface{} {
 	return map[string]interface{}{
 		"id":         company.ID.String(),
 		"name":       company.Name,
@@ -183,12 +190,9 @@ func (h *CompanyHandlers) UpdateCompany(_ context.Context, request *mcp.CallTool
 	}
 
 	// Get existing company
-	company, err := db.GetCompany(h.db, companyID)
+	company, err := h.client.GetCompany(companyID)
 	if err != nil {
 		return nil, CompanyOutput{}, fmt.Errorf("company not found: %w", err)
-	}
-	if company == nil {
-		return nil, CompanyOutput{}, fmt.Errorf("company not found: %s", companyID)
 	}
 
 	// Apply updates
@@ -205,7 +209,7 @@ func (h *CompanyHandlers) UpdateCompany(_ context.Context, request *mcp.CallTool
 		company.Notes = input.Notes
 	}
 
-	err = db.UpdateCompany(h.db, companyID, company)
+	err = h.client.UpdateCompany(company)
 	if err != nil {
 		return nil, CompanyOutput{}, fmt.Errorf("failed to update company: %w", err)
 	}
@@ -231,7 +235,7 @@ func (h *CompanyHandlers) DeleteCompany(_ context.Context, request *mcp.CallTool
 		return nil, DeleteCompanyOutput{}, fmt.Errorf("invalid company_id: %w", err)
 	}
 
-	err = db.DeleteCompany(h.db, companyID)
+	err = h.client.DeleteCompany(companyID)
 	if err != nil {
 		return nil, DeleteCompanyOutput{}, fmt.Errorf("failed to delete company: %w", err)
 	}

@@ -8,8 +8,7 @@ import (
 	"github.com/goccy/go-graphviz"
 	"github.com/goccy/go-graphviz/cgraph"
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
+	"github.com/harperreed/pagen/charm"
 )
 
 func (g *GraphGenerator) GenerateContactGraph(contactID *uuid.UUID) (string, error) {
@@ -31,12 +30,12 @@ func (g *GraphGenerator) GenerateContactGraph(contactID *uuid.UUID) (string, err
 
 	// If contactID provided, show that contact's network
 	// Otherwise show all contacts and relationships
-	var relationships []models.Relationship
+	var relationships []*charm.Relationship
 	if contactID != nil {
-		relationships, err = db.FindContactRelationships(g.db, *contactID, "")
+		relationships, err = g.client.ListRelationshipsForContact(*contactID)
 	} else {
 		// Get all relationships
-		relationships, err = db.GetAllRelationships(g.db)
+		relationships, err = g.client.ListRelationships(nil)
 	}
 
 	if err != nil {
@@ -44,25 +43,24 @@ func (g *GraphGenerator) GenerateContactGraph(contactID *uuid.UUID) (string, err
 	}
 
 	// Create nodes for all unique contacts
+	// Use denormalized names from relationships where possible
 	nodes := make(map[string]*cgraph.Node)
 	for _, rel := range relationships {
 		id1 := rel.ContactID1.String()
 		id2 := rel.ContactID2.String()
 
 		if _, exists := nodes[id1]; !exists {
-			contact, _ := db.GetContact(g.db, rel.ContactID1)
-			name := "Unknown"
-			if contact != nil {
-				name = contact.Name
+			name := rel.Contact1Name
+			if name == "" {
+				name = "Unknown"
 			}
 			nodes[id1], _ = graph.CreateNodeByName(name)
 		}
 
 		if _, exists := nodes[id2]; !exists {
-			contact, _ := db.GetContact(g.db, rel.ContactID2)
-			name := "Unknown"
-			if contact != nil {
-				name = contact.Name
+			name := rel.Contact2Name
+			if name == "" {
+				name = "Unknown"
 			}
 			nodes[id2], _ = graph.CreateNodeByName(name)
 		}

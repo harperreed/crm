@@ -3,16 +3,15 @@
 package cli
 
 import (
-	"database/sql"
 	"flag"
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
+	"github.com/harperreed/pagen/charm"
 )
 
 // UpdateRelationshipCommand updates a relationship.
-func UpdateRelationshipCommand(database *sql.DB, args []string) error {
+func UpdateRelationshipCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("update-relationship", flag.ExitOnError)
 	relType := fs.String("type", "", "Relationship type")
 	context := fs.String("context", "", "Relationship context")
@@ -27,7 +26,19 @@ func UpdateRelationshipCommand(database *sql.DB, args []string) error {
 		return fmt.Errorf("invalid relationship ID: %w", err)
 	}
 
-	err = db.UpdateRelationship(database, relID, *relType, *context)
+	rel, err := client.GetRelationship(relID)
+	if err != nil {
+		return err
+	}
+
+	if *relType != "" {
+		rel.RelationshipType = *relType
+	}
+	if *context != "" {
+		rel.Context = *context
+	}
+
+	err = client.UpdateRelationship(rel)
 	if err != nil {
 		return err
 	}
@@ -37,7 +48,7 @@ func UpdateRelationshipCommand(database *sql.DB, args []string) error {
 }
 
 // DeleteRelationshipCommand deletes a relationship.
-func DeleteRelationshipCommand(database *sql.DB, args []string) error {
+func DeleteRelationshipCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("delete-relationship", flag.ExitOnError)
 	_ = fs.Parse(args)
 
@@ -50,7 +61,7 @@ func DeleteRelationshipCommand(database *sql.DB, args []string) error {
 		return fmt.Errorf("invalid relationship ID: %w", err)
 	}
 
-	err = db.DeleteRelationship(database, relID)
+	err = client.DeleteRelationship(relID)
 	if err != nil {
 		return err
 	}

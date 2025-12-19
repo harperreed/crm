@@ -3,7 +3,6 @@
 package web
 
 import (
-	"database/sql"
 	"embed"
 	"fmt"
 	"html/template"
@@ -13,8 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
+	"github.com/harperreed/pagen/charm"
 	"github.com/harperreed/pagen/viz"
 )
 
@@ -22,12 +20,12 @@ import (
 var templatesFS embed.FS
 
 type Server struct {
-	db        *sql.DB
+	client    *charm.Client
 	templates *template.Template
 	generator *viz.GraphGenerator
 }
 
-func NewServer(database *sql.DB) (*Server, error) {
+func NewServer(client *charm.Client) (*Server, error) {
 	// Helper functions for templates
 	funcMap := template.FuncMap{
 		"divide": func(a, b int64) int64 {
@@ -53,9 +51,9 @@ func NewServer(database *sql.DB) (*Server, error) {
 	}
 
 	return &Server{
-		db:        database,
+		client:    client,
 		templates: tmpl,
-		generator: viz.NewGraphGenerator(database),
+		generator: viz.NewGraphGenerator(client),
 	}, nil
 }
 
@@ -81,7 +79,7 @@ func (s *Server) Start(port int) error {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	stats, err := viz.GenerateDashboardStats(s.db)
+	stats, err := viz.GenerateDashboardStats(s.client)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -109,13 +107,16 @@ func (s *Server) renderTemplate(w http.ResponseWriter, name string, data interfa
 
 func (s *Server) handleContacts(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
-	contacts, err := db.FindContacts(s.db, query, nil, 100)
+	contacts, err := s.client.ListContacts(&charm.ContactFilter{
+		Query: query,
+		Limit: 100,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Enrich with company names
+	// Contact views - charm.Contact already has CompanyName denormalized
 	type ContactView struct {
 		ID          string
 		Name        string
@@ -125,19 +126,11 @@ func (s *Server) handleContacts(w http.ResponseWriter, r *http.Request) {
 
 	var contactViews []ContactView
 	for _, contact := range contacts {
-		companyName := ""
-		if contact.CompanyID != nil {
-			company, _ := db.GetCompany(s.db, *contact.CompanyID)
-			if company != nil {
-				companyName = company.Name
-			}
-		}
-
 		contactViews = append(contactViews, ContactView{
 			ID:          contact.ID.String(),
 			Name:        contact.Name,
 			Email:       contact.Email,
-			CompanyName: companyName,
+			CompanyName: contact.CompanyName, // Already denormalized in charm model
 		})
 	}
 
@@ -152,7 +145,10 @@ func (s *Server) handleContacts(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCompanies(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
-	companies, err := db.FindCompanies(s.db, query, 100)
+	companies, err := s.client.ListCompanies(&charm.CompanyFilter{
+		Query: query,
+		Limit: 100,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -171,24 +167,17 @@ func (s *Server) handleDeals(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	stage := r.URL.Query().Get("stage")
 
-	deals, err := db.FindDeals(s.db, query, nil, 100)
+	deals, err := s.client.ListDeals(&charm.DealFilter{
+		Query: query,
+		Stage: stage,
+		Limit: 100,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Filter by stage if specified
-	if stage != "" {
-		var filtered []models.Deal
-		for _, deal := range deals {
-			if deal.Stage == stage {
-				filtered = append(filtered, deal)
-			}
-		}
-		deals = filtered
-	}
-
-	// Enrich with company names
+	// Deal views - charm.Deal already has CompanyName denormalized
 	type DealView struct {
 		ID          string
 		Title       string
@@ -200,16 +189,10 @@ func (s *Server) handleDeals(w http.ResponseWriter, r *http.Request) {
 
 	var dealViews []DealView
 	for _, deal := range deals {
-		company, _ := db.GetCompany(s.db, deal.CompanyID)
-		companyName := ""
-		if company != nil {
-			companyName = company.Name
-		}
-
 		dealViews = append(dealViews, DealView{
 			ID:          deal.ID.String(),
 			Title:       deal.Title,
-			CompanyName: companyName,
+			CompanyName: deal.CompanyName, // Already denormalized in charm model
 			Stage:       deal.Stage,
 			Amount:      deal.Amount,
 			Currency:    deal.Currency,
@@ -233,23 +216,15 @@ func (s *Server) handleContactDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contact, err := db.GetContact(s.db, id)
+	contact, err := s.client.GetContact(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	companyName := ""
-	if contact.CompanyID != nil {
-		company, _ := db.GetCompany(s.db, *contact.CompanyID)
-		if company != nil {
-			companyName = company.Name
-		}
-	}
-
 	data := map[string]interface{}{
 		"Contact":     contact,
-		"CompanyName": companyName,
+		"CompanyName": contact.CompanyName, // Already denormalized in charm model
 	}
 
 	s.renderTemplate(w, "partials/contact-detail.html", data)
@@ -263,13 +238,16 @@ func (s *Server) handleCompanyDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	company, err := db.GetCompany(s.db, id)
+	company, err := s.client.GetCompany(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	contacts, _ := db.FindContacts(s.db, "", &id, 100)
+	contacts, _ := s.client.ListContacts(&charm.ContactFilter{
+		CompanyID: &id,
+		Limit:     100,
+	})
 
 	data := map[string]interface{}{
 		"Company":  company,
@@ -287,32 +265,18 @@ func (s *Server) handleDealDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deal, err := db.GetDeal(s.db, id)
+	deal, err := s.client.GetDeal(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	company, _ := db.GetCompany(s.db, deal.CompanyID)
-	companyName := ""
-	if company != nil {
-		companyName = company.Name
-	}
-
-	contactName := ""
-	if deal.ContactID != nil {
-		contact, _ := db.GetContact(s.db, *deal.ContactID)
-		if contact != nil {
-			contactName = contact.Name
-		}
-	}
-
-	notes, _ := db.GetDealNotes(s.db, id)
+	notes, _ := s.client.ListDealNotes(id)
 
 	data := map[string]interface{}{
 		"Deal":        deal,
-		"CompanyName": companyName,
-		"ContactName": contactName,
+		"CompanyName": deal.CompanyName, // Already denormalized in charm model
+		"ContactName": deal.ContactName, // Already denormalized in charm model
 		"Notes":       notes,
 	}
 
@@ -379,14 +343,14 @@ func (s *Server) handleGraphPartial(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFollowups(w http.ResponseWriter, r *http.Request) {
-	followups, err := db.GetFollowupList(s.db, 50)
+	followups, err := s.client.GetFollowupList(50)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	data := struct {
-		Followups []models.FollowupContact
+		Followups []*charm.FollowupContact
 	}{
 		Followups: followups,
 	}
@@ -412,14 +376,23 @@ func (s *Server) handleFollowupLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	interaction := &models.InteractionLog{
+	// Get contact name for denormalization
+	contact, err := s.client.GetContact(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	interaction := &charm.InteractionLog{
+		ID:              uuid.New(),
 		ContactID:       id,
-		InteractionType: models.InteractionMessage,
+		ContactName:     contact.Name,
+		InteractionType: charm.InteractionMessage,
 		Timestamp:       time.Now(),
 		Notes:           "Quick contact via web UI",
 	}
 
-	err = db.LogInteraction(s.db, interaction)
+	err = s.client.CreateInteractionLog(interaction)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

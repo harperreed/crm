@@ -3,11 +3,10 @@
 package tui
 
 import (
-	"database/sql"
-
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/harperreed/pagen/charm"
 )
 
 // ViewMode represents the current TUI view.
@@ -34,7 +33,7 @@ const (
 
 // Model is the main bubbletea model.
 type Model struct {
-	db         *sql.DB
+	client     *charm.Client
 	viewMode   ViewMode
 	entityType EntityType
 
@@ -57,10 +56,9 @@ type Model struct {
 	deleteMessage   string
 
 	// Sync view state
-	syncStates      []SyncStateDisplay //nolint:unused // used in sync view
-	syncInProgress  map[string]bool    //nolint:unused // used in sync view
-	syncMessages    []string           //nolint:unused // used in sync view
-	selectedService int                //nolint:unused // used in sync view
+	syncInProgress  map[string]bool //nolint:unused // used in sync view
+	syncMessages    []string        //nolint:unused // used in sync view
+	selectedService int             //nolint:unused // used in sync view
 
 	// UI state
 	width  int
@@ -68,19 +66,10 @@ type Model struct {
 	err    error //nolint:unused // will be used in error handling
 }
 
-// SyncStateDisplay represents sync state for display in TUI.
-type SyncStateDisplay struct {
-	Service      string
-	Status       string
-	LastSyncTime string
-	ErrorMessage string
-	InProgress   bool
-}
-
 // NewModel creates a new TUI model.
-func NewModel(db *sql.DB) Model {
+func NewModel(client *charm.Client) Model {
 	return Model{
-		db:             db,
+		client:         client,
 		viewMode:       ViewList,
 		entityType:     EntityContacts,
 		width:          80,
@@ -104,6 +93,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case SyncCompleteMsg:
 		return m, m.handleSyncComplete(msg)
+	case AutoSyncToggleMsg:
+		return m, m.handleAutoSyncToggle(msg)
 	}
 	return m, nil
 }

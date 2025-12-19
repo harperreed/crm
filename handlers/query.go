@@ -4,20 +4,19 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
+	"github.com/harperreed/pagen/charm"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type QueryHandlers struct {
-	db *sql.DB
+	client *charm.Client
 }
 
-func NewQueryHandlers(database *sql.DB) *QueryHandlers {
-	return &QueryHandlers{db: database}
+func NewQueryHandlers(client *charm.Client) *QueryHandlers {
+	return &QueryHandlers{client: client}
 }
 
 type QueryCRMInput struct {
@@ -66,8 +65,12 @@ func (h *QueryHandlers) queryContacts(input QueryCRMInput) (*mcp.CallToolResult,
 		}
 	}
 
-	// Query contacts using existing db function
-	contacts, err := db.FindContacts(h.db, input.Query, companyID, input.Limit)
+	// Query contacts using charm client
+	contacts, err := h.client.ListContacts(&charm.ContactFilter{
+		Query:     input.Query,
+		CompanyID: companyID,
+		Limit:     input.Limit,
+	})
 	if err != nil {
 		return nil, QueryCRMOutput{}, fmt.Errorf("failed to find contacts: %w", err)
 	}
@@ -75,7 +78,7 @@ func (h *QueryHandlers) queryContacts(input QueryCRMInput) (*mcp.CallToolResult,
 	// Convert to interface{} array
 	results := make([]interface{}, len(contacts))
 	for i, c := range contacts {
-		results[i] = contactToOutput(&c)
+		results[i] = contactToOutput(c)
 	}
 
 	return &mcp.CallToolResult{}, QueryCRMOutput{
@@ -86,8 +89,11 @@ func (h *QueryHandlers) queryContacts(input QueryCRMInput) (*mcp.CallToolResult,
 }
 
 func (h *QueryHandlers) queryCompanies(input QueryCRMInput) (*mcp.CallToolResult, QueryCRMOutput, error) {
-	// Query companies using existing db function
-	companies, err := db.FindCompanies(h.db, input.Query, input.Limit)
+	// Query companies using charm client
+	companies, err := h.client.ListCompanies(&charm.CompanyFilter{
+		Query: input.Query,
+		Limit: input.Limit,
+	})
 	if err != nil {
 		return nil, QueryCRMOutput{}, fmt.Errorf("failed to find companies: %w", err)
 	}
@@ -95,7 +101,7 @@ func (h *QueryHandlers) queryCompanies(input QueryCRMInput) (*mcp.CallToolResult
 	// Convert to interface{} array
 	results := make([]interface{}, len(companies))
 	for i, c := range companies {
-		results[i] = companyToOutput(&c)
+		results[i] = companyToOutput(c)
 	}
 
 	return &mcp.CallToolResult{}, QueryCRMOutput{
@@ -106,15 +112,15 @@ func (h *QueryHandlers) queryCompanies(input QueryCRMInput) (*mcp.CallToolResult
 }
 
 func (h *QueryHandlers) queryDeals(input QueryCRMInput) (*mcp.CallToolResult, QueryCRMOutput, error) {
-	// Extract filters
-	var stage string
-	var companyID *uuid.UUID
-	var minAmount, maxAmount *int64
+	// Build filter from input
+	filter := &charm.DealFilter{
+		Limit: input.Limit,
+	}
 
 	if input.Filters != nil {
 		// Extract stage filter
 		if s, ok := input.Filters["stage"].(string); ok {
-			stage = s
+			filter.Stage = s
 		}
 
 		// Extract company_id filter
@@ -123,56 +129,48 @@ func (h *QueryHandlers) queryDeals(input QueryCRMInput) (*mcp.CallToolResult, Qu
 			if err != nil {
 				return nil, QueryCRMOutput{}, fmt.Errorf("invalid company_id: %w", err)
 			}
-			companyID = &id
+			filter.CompanyID = &id
 		}
 
 		// Extract min_amount filter
 		if minAmountRaw, ok := input.Filters["min_amount"]; ok {
 			if minAmountFloat, ok := minAmountRaw.(float64); ok {
-				amt := int64(minAmountFloat)
-				minAmount = &amt
+				filter.MinAmount = int64(minAmountFloat)
 			}
 		}
 
 		// Extract max_amount filter
 		if maxAmountRaw, ok := input.Filters["max_amount"]; ok {
 			if maxAmountFloat, ok := maxAmountRaw.(float64); ok {
-				amt := int64(maxAmountFloat)
-				maxAmount = &amt
+				filter.MaxAmount = int64(maxAmountFloat)
 			}
 		}
 	}
 
-	// Query deals using existing db function
-	deals, err := db.FindDeals(h.db, stage, companyID, input.Limit)
+	// Query deals using charm client
+	deals, err := h.client.ListDeals(filter)
 	if err != nil {
 		return nil, QueryCRMOutput{}, fmt.Errorf("failed to find deals: %w", err)
 	}
 
-	// Filter by amount range in-memory (MVP approach)
-	filteredDeals := make([]interface{}, 0)
-	for _, d := range deals {
-		// Check min/max amount filters
-		if minAmount != nil && d.Amount < *minAmount {
-			continue
-		}
-		if maxAmount != nil && d.Amount > *maxAmount {
-			continue
-		}
-		filteredDeals = append(filteredDeals, dealToOutput(&d))
+	// Convert to interface{} array
+	results := make([]interface{}, len(deals))
+	for i, d := range deals {
+		results[i] = dealToOutput(d)
 	}
 
 	return &mcp.CallToolResult{}, QueryCRMOutput{
 		EntityType: "deal",
-		Results:    filteredDeals,
-		Count:      len(filteredDeals),
+		Results:    results,
+		Count:      len(results),
 	}, nil
 }
 
 func (h *QueryHandlers) queryRelationships(input QueryCRMInput) (*mcp.CallToolResult, QueryCRMOutput, error) {
-	// Extract filters
-	var contactID *uuid.UUID
-	var relationshipType string
+	// Build filter from input
+	filter := &charm.RelationshipFilter{
+		Limit: input.Limit,
+	}
 
 	if input.Filters != nil {
 		// Extract contact_id filter (required for relationships)
@@ -181,22 +179,22 @@ func (h *QueryHandlers) queryRelationships(input QueryCRMInput) (*mcp.CallToolRe
 			if err != nil {
 				return nil, QueryCRMOutput{}, fmt.Errorf("invalid contact_id: %w", err)
 			}
-			contactID = &id
+			filter.ContactID = &id
 		}
 
 		// Extract relationship_type filter
 		if rt, ok := input.Filters["relationship_type"].(string); ok {
-			relationshipType = rt
+			filter.RelationshipType = rt
 		}
 	}
 
 	// contact_id is required for relationship queries
-	if contactID == nil {
+	if filter.ContactID == nil {
 		return nil, QueryCRMOutput{}, fmt.Errorf("contact_id filter is required for relationship queries")
 	}
 
-	// Query relationships using existing db function
-	relationships, err := db.FindContactRelationships(h.db, *contactID, relationshipType)
+	// Query relationships using charm client
+	relationships, err := h.client.ListRelationships(filter)
 	if err != nil {
 		return nil, QueryCRMOutput{}, fmt.Errorf("failed to find relationships: %w", err)
 	}
@@ -204,7 +202,7 @@ func (h *QueryHandlers) queryRelationships(input QueryCRMInput) (*mcp.CallToolRe
 	// Convert to interface{} array
 	results := make([]interface{}, len(relationships))
 	for i, r := range relationships {
-		results[i] = relationshipToOutput(&r)
+		results[i] = relationshipToOutput(r)
 	}
 
 	return &mcp.CallToolResult{}, QueryCRMOutput{

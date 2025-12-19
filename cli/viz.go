@@ -3,17 +3,17 @@
 package cli
 
 import (
-	"database/sql"
 	"flag"
 	"fmt"
 	"os"
 
 	"github.com/google/uuid"
+	"github.com/harperreed/pagen/charm"
 	"github.com/harperreed/pagen/viz"
 )
 
 // VizGraphContactsCommand generates a contact relationship network graph.
-func VizGraphContactsCommand(db *sql.DB, args []string) error {
+func VizGraphContactsCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("viz graph contacts", flag.ExitOnError)
 	output := fs.String("output", "", "Output file (default: stdout)")
 
@@ -21,7 +21,7 @@ func VizGraphContactsCommand(db *sql.DB, args []string) error {
 		return err
 	}
 
-	generator := viz.NewGraphGenerator(db)
+	generator := viz.NewGraphGenerator(client)
 
 	var contactID *uuid.UUID
 	if fs.NArg() > 0 {
@@ -46,7 +46,7 @@ func VizGraphContactsCommand(db *sql.DB, args []string) error {
 }
 
 // VizGraphCompanyCommand generates a company org chart.
-func VizGraphCompanyCommand(db *sql.DB, args []string) error {
+func VizGraphCompanyCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("viz graph company", flag.ExitOnError)
 	output := fs.String("output", "", "Output file (default: stdout)")
 
@@ -63,7 +63,7 @@ func VizGraphCompanyCommand(db *sql.DB, args []string) error {
 		return fmt.Errorf("invalid company ID: %w", err)
 	}
 
-	generator := viz.NewGraphGenerator(db)
+	generator := viz.NewGraphGenerator(client)
 	dot, err := generator.GenerateCompanyGraph(companyID)
 	if err != nil {
 		return err
@@ -78,7 +78,7 @@ func VizGraphCompanyCommand(db *sql.DB, args []string) error {
 }
 
 // VizGraphPipelineCommand generates a deal pipeline graph.
-func VizGraphPipelineCommand(db *sql.DB, args []string) error {
+func VizGraphPipelineCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("viz graph pipeline", flag.ExitOnError)
 	output := fs.String("output", "", "Output file (default: stdout)")
 
@@ -86,7 +86,7 @@ func VizGraphPipelineCommand(db *sql.DB, args []string) error {
 		return err
 	}
 
-	generator := viz.NewGraphGenerator(db)
+	generator := viz.NewGraphGenerator(client)
 	dot, err := generator.GeneratePipelineGraph()
 	if err != nil {
 		return err
@@ -101,7 +101,7 @@ func VizGraphPipelineCommand(db *sql.DB, args []string) error {
 }
 
 // VizGraphAllCommand generates a complete graph with all entities.
-func VizGraphAllCommand(db *sql.DB, args []string) error {
+func VizGraphAllCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("viz graph all", flag.ExitOnError)
 	output := fs.String("output", "", "Output file (default: stdout)")
 
@@ -109,7 +109,7 @@ func VizGraphAllCommand(db *sql.DB, args []string) error {
 		return err
 	}
 
-	generator := viz.NewGraphGenerator(db)
+	generator := viz.NewGraphGenerator(client)
 	dot, err := generator.GenerateCompleteGraph()
 	if err != nil {
 		return err
@@ -123,8 +123,8 @@ func VizGraphAllCommand(db *sql.DB, args []string) error {
 	return nil
 }
 
-func VizDashboardCommand(database *sql.DB, args []string) error {
-	stats, err := viz.GenerateDashboardStats(database)
+func VizDashboardCommand(client *charm.Client, args []string) error {
+	stats, err := viz.GenerateDashboardStats(client)
 	if err != nil {
 		return fmt.Errorf("failed to generate dashboard stats: %w", err)
 	}

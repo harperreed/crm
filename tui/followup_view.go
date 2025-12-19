@@ -6,11 +6,10 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/bubbles/table"
-	"github.com/harperreed/pagen/db"
 )
 
 func (m Model) renderFollowupsTable() string {
-	followups, err := db.GetFollowupList(m.db, 100)
+	followups, err := m.client.GetFollowupList(100)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}

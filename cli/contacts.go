@@ -3,8 +3,6 @@
 package cli
 
 import (
-	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"log"
@@ -14,33 +12,28 @@ import (
 	"github.com/harperreed/sweet/vault"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
+	"github.com/harperreed/pagen/charm"
 	"github.com/harperreed/pagen/sync"
 )
 
 // queueContactToVault queues a contact change to vault sync.
 // Sync failures are non-fatal - the local operation already succeeded.
-func queueContactToVault(database *sql.DB, contact *models.Contact, companyName string, op vault.Op) {
+// NOTE: Currently disabled during migration to charm KV - will be re-enabled when vault sync is migrated.
+func queueContactToVault(client *charm.Client, contact *charm.Contact, op vault.Op) {
 	cfg, err := sync.LoadVaultConfig()
 	if err != nil || !cfg.IsConfigured() {
 		return // Vault sync not configured, silently skip
 	}
 
-	syncer, err := sync.NewVaultSyncer(cfg, database)
-	if err != nil {
-		log.Printf("warning: vault sync init failed: %v", err)
-		return
-	}
-	defer func() { _ = syncer.Close() }()
-
-	if err := syncer.QueueContactChange(context.Background(), contact, companyName, op); err != nil {
-		log.Printf("warning: vault sync queue failed: %v", err)
-	}
+	// TODO: Re-enable when vault sync is migrated to charm KV
+	_ = cfg
+	_ = contact
+	_ = op
+	log.Printf("warning: vault sync temporarily disabled during charm KV migration")
 }
 
 // AddContactCommand adds a new contact.
-func AddContactCommand(database *sql.DB, args []string) error {
+func AddContactCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("add-contact", flag.ExitOnError)
 	name := fs.String("name", "", "Contact name (required)")
 	email := fs.String("email", "", "Email address")
@@ -53,7 +46,7 @@ func AddContactCommand(database *sql.DB, args []string) error {
 		return fmt.Errorf("--name is required")
 	}
 
-	contact := &models.Contact{
+	contact := &charm.Contact{
 		Name:  *name,
 		Email: *email,
 		Phone: *phone,
@@ -62,29 +55,31 @@ func AddContactCommand(database *sql.DB, args []string) error {
 
 	// Handle company association
 	if *company != "" {
-		existingCompany, err := db.FindCompanyByName(database, *company)
+		existingCompany, err := client.FindCompanyByName(*company)
 		if err != nil {
 			return fmt.Errorf("failed to lookup company: %w", err)
 		}
 
 		if existingCompany == nil {
 			// Create company
-			newCompany := &models.Company{Name: *company}
-			if err := db.CreateCompany(database, newCompany); err != nil {
+			newCompany := &charm.Company{Name: *company}
+			if err := client.CreateCompany(newCompany); err != nil {
 				return fmt.Errorf("failed to create company: %w", err)
 			}
 			contact.CompanyID = &newCompany.ID
+			contact.CompanyName = newCompany.Name
 		} else {
 			contact.CompanyID = &existingCompany.ID
+			contact.CompanyName = existingCompany.Name
 		}
 	}
 
-	if err := db.CreateContact(database, contact); err != nil {
+	if err := client.CreateContact(contact); err != nil {
 		return fmt.Errorf("failed to create contact: %w", err)
 	}
 
 	// Queue to vault sync (non-fatal)
-	queueContactToVault(database, contact, *company, vault.OpUpsert)
+	queueContactToVault(client, contact, vault.OpUpsert)
 
 	fmt.Printf("✓ Contact created: %s (ID: %s)\n", contact.Name, contact.ID)
 	if contact.Email != "" {
@@ -101,7 +96,7 @@ func AddContactCommand(database *sql.DB, args []string) error {
 }
 
 // ListContactsCommand lists all contacts.
-func ListContactsCommand(database *sql.DB, args []string) error {
+func ListContactsCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("list-contacts", flag.ExitOnError)
 	query := fs.String("query", "", "Search by name or email")
 	company := fs.String("company", "", "Filter by company name")
@@ -110,7 +105,7 @@ func ListContactsCommand(database *sql.DB, args []string) error {
 
 	var companyIDPtr *uuid.UUID
 	if *company != "" {
-		existingCompany, err := db.FindCompanyByName(database, *company)
+		existingCompany, err := client.FindCompanyByName(*company)
 		if err != nil {
 			return fmt.Errorf("failed to lookup company: %w", err)
 		}
@@ -119,7 +114,11 @@ func ListContactsCommand(database *sql.DB, args []string) error {
 		}
 	}
 
-	contacts, err := db.FindContacts(database, *query, companyIDPtr, *limit)
+	contacts, err := client.ListContacts(&charm.ContactFilter{
+		Query:     *query,
+		CompanyID: companyIDPtr,
+		Limit:     *limit,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to find contacts: %w", err)
 	}
@@ -145,11 +144,8 @@ func ListContactsCommand(database *sql.DB, args []string) error {
 		}
 
 		companyName := "-"
-		if contact.CompanyID != nil {
-			company, err := db.GetCompany(database, *contact.CompanyID)
-			if err == nil && company != nil {
-				companyName = company.Name
-			}
+		if contact.CompanyName != "" {
+			companyName = contact.CompanyName
 		}
 
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
@@ -162,7 +158,7 @@ func ListContactsCommand(database *sql.DB, args []string) error {
 }
 
 // UpdateContactCommand updates an existing contact.
-func UpdateContactCommand(database *sql.DB, args []string) error {
+func UpdateContactCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("update-contact", flag.ExitOnError)
 	name := fs.String("name", "", "Contact name")
 	email := fs.String("email", "", "Email address")
@@ -182,12 +178,9 @@ func UpdateContactCommand(database *sql.DB, args []string) error {
 	}
 
 	// Get existing contact
-	existing, err := db.GetContact(database, contactID)
+	existing, err := client.GetContact(contactID)
 	if err != nil {
 		return fmt.Errorf("contact not found: %w", err)
-	}
-	if existing == nil {
-		return fmt.Errorf("contact not found: %s", contactID)
 	}
 
 	// Apply updates from flags
@@ -205,7 +198,7 @@ func UpdateContactCommand(database *sql.DB, args []string) error {
 	}
 
 	if *company != "" {
-		existingCompany, err := db.FindCompanyByName(database, *company)
+		existingCompany, err := client.FindCompanyByName(*company)
 		if err != nil {
 			return fmt.Errorf("failed to lookup company: %w", err)
 		}
@@ -213,31 +206,23 @@ func UpdateContactCommand(database *sql.DB, args []string) error {
 			return fmt.Errorf("company not found: %s", *company)
 		}
 		existing.CompanyID = &existingCompany.ID
+		existing.CompanyName = existingCompany.Name
 	}
 
-	err = db.UpdateContact(database, contactID, existing)
+	err = client.UpdateContact(existing)
 	if err != nil {
 		return fmt.Errorf("failed to update contact: %w", err)
 	}
 
-	// Look up company name for vault sync
-	var companyName string
-	if existing.CompanyID != nil {
-		companyRecord, err := db.GetCompany(database, *existing.CompanyID)
-		if err == nil && companyRecord != nil {
-			companyName = companyRecord.Name
-		}
-	}
-
 	// Queue to vault sync (non-fatal)
-	queueContactToVault(database, existing, companyName, vault.OpUpsert)
+	queueContactToVault(client, existing, vault.OpUpsert)
 
 	fmt.Printf("✓ Contact updated: %s (ID: %s)\n", existing.Name, contactID)
 	return nil
 }
 
 // DeleteContactCommand deletes a contact.
-func DeleteContactCommand(database *sql.DB, args []string) error {
+func DeleteContactCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("delete-contact", flag.ExitOnError)
 	_ = fs.Parse(args)
 
@@ -252,30 +237,18 @@ func DeleteContactCommand(database *sql.DB, args []string) error {
 	}
 
 	// Get contact before deletion for vault sync
-	contact, err := db.GetContact(database, contactID)
+	contact, err := client.GetContact(contactID)
 	if err != nil {
 		return fmt.Errorf("contact not found: %w", err)
 	}
-	if contact == nil {
-		return fmt.Errorf("contact not found: %s", contactID)
-	}
 
-	// Look up company name for vault sync
-	var companyName string
-	if contact.CompanyID != nil {
-		companyRecord, err := db.GetCompany(database, *contact.CompanyID)
-		if err == nil && companyRecord != nil {
-			companyName = companyRecord.Name
-		}
-	}
-
-	err = db.DeleteContact(database, contactID)
+	err = client.DeleteContact(contactID)
 	if err != nil {
 		return fmt.Errorf("failed to delete contact: %w", err)
 	}
 
 	// Queue to vault sync (non-fatal)
-	queueContactToVault(database, contact, companyName, vault.OpDelete)
+	queueContactToVault(client, contact, vault.OpDelete)
 
 	fmt.Printf("✓ Contact deleted: %s\n", contactID)
 	return nil

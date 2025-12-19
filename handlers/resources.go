@@ -4,23 +4,21 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
+	"github.com/harperreed/pagen/charm"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type ResourceHandlers struct {
-	db *sql.DB
+	client *charm.Client
 }
 
-func NewResourceHandlers(database *sql.DB) *ResourceHandlers {
-	return &ResourceHandlers{db: database}
+func NewResourceHandlers(client *charm.Client) *ResourceHandlers {
+	return &ResourceHandlers{client: client}
 }
 
 // ReadResource handles resource read requests.
@@ -62,7 +60,7 @@ func (h *ResourceHandlers) ReadResource(ctx context.Context, request *mcp.ReadRe
 }
 
 func (h *ResourceHandlers) readAllContacts() (*mcp.ReadResourceResult, error) {
-	contacts, err := db.FindContacts(h.db, "", nil, 1000)
+	contacts, err := h.client.ListContacts(&charm.ContactFilter{Limit: 1000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch contacts: %w", err)
 	}
@@ -87,7 +85,7 @@ func (h *ResourceHandlers) readContact(idStr string) (*mcp.ReadResourceResult, e
 		return nil, fmt.Errorf("invalid contact ID: %w", err)
 	}
 
-	contact, err := db.GetContact(h.db, id)
+	contact, err := h.client.GetContact(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch contact: %w", err)
 	}
@@ -107,7 +105,7 @@ func (h *ResourceHandlers) readContact(idStr string) (*mcp.ReadResourceResult, e
 }
 
 func (h *ResourceHandlers) readAllCompanies() (*mcp.ReadResourceResult, error) {
-	companies, err := db.FindCompanies(h.db, "", 1000)
+	companies, err := h.client.ListCompanies(&charm.CompanyFilter{Limit: 1000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch companies: %w", err)
 	}
@@ -132,22 +130,22 @@ func (h *ResourceHandlers) readCompany(idStr string) (*mcp.ReadResourceResult, e
 		return nil, fmt.Errorf("invalid company ID: %w", err)
 	}
 
-	company, err := db.GetCompany(h.db, id)
+	company, err := h.client.GetCompany(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch company: %w", err)
 	}
 
 	// Include associated contacts
-	contacts, err := db.FindContacts(h.db, "", &id, 1000)
+	contacts, err := h.client.ListContacts(&charm.ContactFilter{CompanyID: &id, Limit: 1000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch company contacts: %w", err)
 	}
 
 	companyData := struct {
-		models.Company
-		Contacts []models.Contact `json:"contacts"`
+		*charm.Company
+		Contacts []*charm.Contact `json:"contacts"`
 	}{
-		Company:  *company,
+		Company:  company,
 		Contacts: contacts,
 	}
 
@@ -166,7 +164,7 @@ func (h *ResourceHandlers) readCompany(idStr string) (*mcp.ReadResourceResult, e
 }
 
 func (h *ResourceHandlers) readAllDeals() (*mcp.ReadResourceResult, error) {
-	deals, err := db.FindDeals(h.db, "", nil, 1000)
+	deals, err := h.client.ListDeals(&charm.DealFilter{Limit: 1000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch deals: %w", err)
 	}
@@ -191,22 +189,22 @@ func (h *ResourceHandlers) readDeal(idStr string) (*mcp.ReadResourceResult, erro
 		return nil, fmt.Errorf("invalid deal ID: %w", err)
 	}
 
-	deal, err := db.GetDeal(h.db, id)
+	deal, err := h.client.GetDeal(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch deal: %w", err)
 	}
 
 	// Include deal notes/history
-	notes, err := db.GetDealNotes(h.db, id)
+	notes, err := h.client.ListDealNotes(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch deal notes: %w", err)
 	}
 
 	dealData := struct {
-		models.Deal
-		Notes []models.DealNote `json:"notes"`
+		*charm.Deal
+		Notes []*charm.DealNote `json:"notes"`
 	}{
-		Deal:  *deal,
+		Deal:  deal,
 		Notes: notes,
 	}
 
@@ -225,7 +223,7 @@ func (h *ResourceHandlers) readDeal(idStr string) (*mcp.ReadResourceResult, erro
 }
 
 func (h *ResourceHandlers) readPipeline() (*mcp.ReadResourceResult, error) {
-	allDeals, err := db.FindDeals(h.db, "", nil, 10000)
+	allDeals, err := h.client.ListDeals(&charm.DealFilter{Limit: 10000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch deals: %w", err)
 	}

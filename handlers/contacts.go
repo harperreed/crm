@@ -4,22 +4,20 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
+	"github.com/harperreed/pagen/charm"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type ContactHandlers struct {
-	db *sql.DB
+	client *charm.Client
 }
 
-func NewContactHandlers(database *sql.DB) *ContactHandlers {
-	return &ContactHandlers{db: database}
+func NewContactHandlers(client *charm.Client) *ContactHandlers {
+	return &ContactHandlers{client: client}
 }
 
 type AddContactInput struct {
@@ -47,7 +45,7 @@ func (h *ContactHandlers) AddContact(_ context.Context, request *mcp.CallToolReq
 		return nil, ContactOutput{}, fmt.Errorf("name is required")
 	}
 
-	contact := &models.Contact{
+	contact := &charm.Contact{
 		Name:  input.Name,
 		Email: input.Email,
 		Phone: input.Phone,
@@ -56,25 +54,26 @@ func (h *ContactHandlers) AddContact(_ context.Context, request *mcp.CallToolReq
 
 	// Handle company lookup/creation if company_name provided
 	if input.CompanyName != "" {
-		company, err := db.FindCompanyByName(h.db, input.CompanyName)
+		company, err := h.client.FindCompanyByName(input.CompanyName)
 		if err != nil {
 			return nil, ContactOutput{}, fmt.Errorf("failed to lookup company: %w", err)
 		}
 
 		if company == nil {
 			// Create new company
-			company = &models.Company{
+			company = &charm.Company{
 				Name: input.CompanyName,
 			}
-			if err := db.CreateCompany(h.db, company); err != nil {
+			if err := h.client.CreateCompany(company); err != nil {
 				return nil, ContactOutput{}, fmt.Errorf("failed to create company: %w", err)
 			}
 		}
 
 		contact.CompanyID = &company.ID
+		contact.CompanyName = company.Name
 	}
 
-	if err := db.CreateContact(h.db, contact); err != nil {
+	if err := h.client.CreateContact(contact); err != nil {
 		return nil, ContactOutput{}, fmt.Errorf("failed to create contact: %w", err)
 	}
 
@@ -92,7 +91,6 @@ type FindContactsOutput struct {
 }
 
 func (h *ContactHandlers) FindContacts(_ context.Context, request *mcp.CallToolRequest, input FindContactsInput) (*mcp.CallToolResult, FindContactsOutput, error) {
-	query := input.Query
 	limit := input.Limit
 	if limit == 0 {
 		limit = 10
@@ -107,14 +105,20 @@ func (h *ContactHandlers) FindContacts(_ context.Context, request *mcp.CallToolR
 		companyID = &cid
 	}
 
-	contacts, err := db.FindContacts(h.db, query, companyID, limit)
+	filter := &charm.ContactFilter{
+		Query:     input.Query,
+		CompanyID: companyID,
+		Limit:     limit,
+	}
+
+	contacts, err := h.client.ListContacts(filter)
 	if err != nil {
 		return nil, FindContactsOutput{}, fmt.Errorf("failed to find contacts: %w", err)
 	}
 
 	result := make([]ContactOutput, len(contacts))
 	for i, contact := range contacts {
-		result[i] = contactToOutput(&contact)
+		result[i] = contactToOutput(contact)
 	}
 
 	return nil, FindContactsOutput{Contacts: result}, nil
@@ -138,12 +142,9 @@ func (h *ContactHandlers) UpdateContact(_ context.Context, request *mcp.CallTool
 		return nil, ContactOutput{}, fmt.Errorf("invalid id: %w", err)
 	}
 
-	contact, err := db.GetContact(h.db, contactID)
+	contact, err := h.client.GetContact(contactID)
 	if err != nil {
 		return nil, ContactOutput{}, fmt.Errorf("failed to get contact: %w", err)
-	}
-	if contact == nil {
-		return nil, ContactOutput{}, fmt.Errorf("contact not found")
 	}
 
 	// Update fields if provided
@@ -160,7 +161,7 @@ func (h *ContactHandlers) UpdateContact(_ context.Context, request *mcp.CallTool
 		contact.Notes = input.Notes
 	}
 
-	if err := db.UpdateContact(h.db, contactID, contact); err != nil {
+	if err := h.client.UpdateContact(contact); err != nil {
 		return nil, ContactOutput{}, fmt.Errorf("failed to update contact: %w", err)
 	}
 
@@ -183,12 +184,9 @@ func (h *ContactHandlers) LogContactInteraction(_ context.Context, request *mcp.
 		return nil, ContactOutput{}, fmt.Errorf("invalid contact_id: %w", err)
 	}
 
-	contact, err := db.GetContact(h.db, contactID)
+	contact, err := h.client.GetContact(contactID)
 	if err != nil {
 		return nil, ContactOutput{}, fmt.Errorf("failed to get contact: %w", err)
-	}
-	if contact == nil {
-		return nil, ContactOutput{}, fmt.Errorf("contact not found")
 	}
 
 	// Parse interaction date or use current time
@@ -202,17 +200,10 @@ func (h *ContactHandlers) LogContactInteraction(_ context.Context, request *mcp.
 	}
 
 	// Update last_contacted_at
-	if err := db.UpdateContactLastContacted(h.db, contactID, interactionTime); err != nil {
-		return nil, ContactOutput{}, fmt.Errorf("failed to update last contacted: %w", err)
-	}
+	contact.LastContactedAt = &interactionTime
 
 	// Append note if provided
 	if input.Note != "" {
-		contact, err = db.GetContact(h.db, contactID)
-		if err != nil {
-			return nil, ContactOutput{}, fmt.Errorf("failed to get contact: %w", err)
-		}
-
 		timestamp := interactionTime.Format("2006-01-02 15:04:05")
 		noteEntry := fmt.Sprintf("[%s] %s", timestamp, input.Note)
 		if contact.Notes != "" {
@@ -220,16 +211,10 @@ func (h *ContactHandlers) LogContactInteraction(_ context.Context, request *mcp.
 		} else {
 			contact.Notes = noteEntry
 		}
-
-		if err := db.UpdateContact(h.db, contactID, contact); err != nil {
-			return nil, ContactOutput{}, fmt.Errorf("failed to update notes: %w", err)
-		}
 	}
 
-	// Reload contact to get updated values
-	contact, err = db.GetContact(h.db, contactID)
-	if err != nil {
-		return nil, ContactOutput{}, fmt.Errorf("failed to reload contact: %w", err)
+	if err := h.client.UpdateContact(contact); err != nil {
+		return nil, ContactOutput{}, fmt.Errorf("failed to update contact: %w", err)
 	}
 
 	return nil, contactToOutput(contact), nil
@@ -254,7 +239,7 @@ func (h *ContactHandlers) DeleteContact(_ context.Context, request *mcp.CallTool
 		return nil, DeleteContactOutput{}, fmt.Errorf("invalid id: %w", err)
 	}
 
-	if err := db.DeleteContact(h.db, contactID); err != nil {
+	if err := h.client.DeleteContact(contactID); err != nil {
 		return nil, DeleteContactOutput{}, fmt.Errorf("failed to delete contact: %w", err)
 	}
 
@@ -264,7 +249,7 @@ func (h *ContactHandlers) DeleteContact(_ context.Context, request *mcp.CallTool
 	}, nil
 }
 
-func contactToOutput(contact *models.Contact) ContactOutput {
+func contactToOutput(contact *charm.Contact) ContactOutput {
 	output := ContactOutput{
 		ID:        contact.ID.String(),
 		Name:      contact.Name,
@@ -295,7 +280,7 @@ func (h *ContactHandlers) AddContact_Legacy(args map[string]interface{}) (interf
 		return nil, fmt.Errorf("name is required")
 	}
 
-	contact := &models.Contact{
+	contact := &charm.Contact{
 		Name: name,
 	}
 
@@ -313,25 +298,26 @@ func (h *ContactHandlers) AddContact_Legacy(args map[string]interface{}) (interf
 
 	// Handle company lookup/creation if company_name provided
 	if companyName, ok := args["company_name"].(string); ok && companyName != "" {
-		company, err := db.FindCompanyByName(h.db, companyName)
+		company, err := h.client.FindCompanyByName(companyName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to lookup company: %w", err)
 		}
 
 		if company == nil {
 			// Create new company
-			company = &models.Company{
+			company = &charm.Company{
 				Name: companyName,
 			}
-			if err := db.CreateCompany(h.db, company); err != nil {
+			if err := h.client.CreateCompany(company); err != nil {
 				return nil, fmt.Errorf("failed to create company: %w", err)
 			}
 		}
 
 		contact.CompanyID = &company.ID
+		contact.CompanyName = company.Name
 	}
 
-	if err := db.CreateContact(h.db, contact); err != nil {
+	if err := h.client.CreateContact(contact); err != nil {
 		return nil, fmt.Errorf("failed to create contact: %w", err)
 	}
 
@@ -358,14 +344,20 @@ func (h *ContactHandlers) FindContacts_Legacy(args map[string]interface{}) (inte
 		companyID = &id
 	}
 
-	contacts, err := db.FindContacts(h.db, query, companyID, limit)
+	filter := &charm.ContactFilter{
+		Query:     query,
+		CompanyID: companyID,
+		Limit:     limit,
+	}
+
+	contacts, err := h.client.ListContacts(filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find contacts: %w", err)
 	}
 
 	result := make([]map[string]interface{}, len(contacts))
 	for i, contact := range contacts {
-		result[i] = contactToMap(&contact)
+		result[i] = contactToMap(contact)
 	}
 
 	return result, nil
@@ -382,12 +374,9 @@ func (h *ContactHandlers) UpdateContact_Legacy(args map[string]interface{}) (int
 		return nil, fmt.Errorf("invalid id: %w", err)
 	}
 
-	contact, err := db.GetContact(h.db, contactID)
+	contact, err := h.client.GetContact(contactID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get contact: %w", err)
-	}
-	if contact == nil {
-		return nil, fmt.Errorf("contact not found")
 	}
 
 	// Update fields if provided
@@ -404,7 +393,7 @@ func (h *ContactHandlers) UpdateContact_Legacy(args map[string]interface{}) (int
 		contact.Notes = notes
 	}
 
-	if err := db.UpdateContact(h.db, contactID, contact); err != nil {
+	if err := h.client.UpdateContact(contact); err != nil {
 		return nil, fmt.Errorf("failed to update contact: %w", err)
 	}
 
@@ -422,12 +411,9 @@ func (h *ContactHandlers) LogContactInteraction_Legacy(args map[string]interface
 		return nil, fmt.Errorf("invalid contact_id: %w", err)
 	}
 
-	contact, err := db.GetContact(h.db, contactID)
+	contact, err := h.client.GetContact(contactID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get contact: %w", err)
-	}
-	if contact == nil {
-		return nil, fmt.Errorf("contact not found")
 	}
 
 	// Parse interaction date or use current time
@@ -441,17 +427,10 @@ func (h *ContactHandlers) LogContactInteraction_Legacy(args map[string]interface
 	}
 
 	// Update last_contacted_at
-	if err := db.UpdateContactLastContacted(h.db, contactID, interactionTime); err != nil {
-		return nil, fmt.Errorf("failed to update last contacted: %w", err)
-	}
+	contact.LastContactedAt = &interactionTime
 
 	// Append note if provided
 	if note, ok := args["note"].(string); ok && note != "" {
-		contact, err = db.GetContact(h.db, contactID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get contact: %w", err)
-		}
-
 		timestamp := interactionTime.Format("2006-01-02 15:04:05")
 		noteEntry := fmt.Sprintf("[%s] %s", timestamp, note)
 		if contact.Notes != "" {
@@ -459,22 +438,16 @@ func (h *ContactHandlers) LogContactInteraction_Legacy(args map[string]interface
 		} else {
 			contact.Notes = noteEntry
 		}
-
-		if err := db.UpdateContact(h.db, contactID, contact); err != nil {
-			return nil, fmt.Errorf("failed to update notes: %w", err)
-		}
 	}
 
-	// Reload contact to get updated values
-	contact, err = db.GetContact(h.db, contactID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to reload contact: %w", err)
+	if err := h.client.UpdateContact(contact); err != nil {
+		return nil, fmt.Errorf("failed to update contact: %w", err)
 	}
 
 	return contactToMap(contact), nil
 }
 
-func contactToMap(contact *models.Contact) map[string]interface{} {
+func contactToMap(contact *charm.Contact) map[string]interface{} {
 	result := map[string]interface{}{
 		"id":         contact.ID.String(),
 		"name":       contact.Name,

@@ -4,22 +4,20 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
+	"github.com/harperreed/pagen/charm"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type FollowupHandlers struct {
-	db *sql.DB
+	client *charm.Client
 }
 
-func NewFollowupHandlers(database *sql.DB) *FollowupHandlers {
-	return &FollowupHandlers{db: database}
+func NewFollowupHandlers(client *charm.Client) *FollowupHandlers {
+	return &FollowupHandlers{client: client}
 }
 
 type GetFollowupListInput struct {
@@ -29,7 +27,7 @@ type GetFollowupListInput struct {
 }
 
 type GetFollowupListOutput struct {
-	Followups []models.FollowupContact `json:"followups"`
+	Followups []*charm.FollowupContact `json:"followups"`
 	Count     int                      `json:"count"`
 }
 
@@ -39,26 +37,36 @@ func (h *FollowupHandlers) GetFollowupList(_ context.Context, _ *mcp.CallToolReq
 		limit = *input.Limit
 	}
 
-	followups, err := db.GetFollowupList(h.db, limit)
+	overdueOnly := false
+	if input.OverdueOnly != nil {
+		overdueOnly = *input.OverdueOnly
+	}
+
+	minPriority := 0.0
+	if input.MinPriority != nil {
+		minPriority = *input.MinPriority
+	}
+
+	allFollowups, err := h.client.GetFollowupList(limit)
 	if err != nil {
 		return nil, GetFollowupListOutput{}, fmt.Errorf("failed to get followup list: %w", err)
 	}
 
-	// Apply filters
-	var filtered []models.FollowupContact
-	for _, f := range followups {
-		if input.OverdueOnly != nil && *input.OverdueOnly && f.PriorityScore <= 0 {
+	// Apply filters in memory
+	var followups []*charm.FollowupContact
+	for _, f := range allFollowups {
+		if overdueOnly && f.PriorityScore <= 0 {
 			continue
 		}
-		if input.MinPriority != nil && f.PriorityScore < *input.MinPriority {
+		if minPriority > 0 && f.PriorityScore < minPriority {
 			continue
 		}
-		filtered = append(filtered, f)
+		followups = append(followups, f)
 	}
 
 	output := GetFollowupListOutput{
-		Followups: filtered,
-		Count:     len(filtered),
+		Followups: followups,
+		Count:     len(followups),
 	}
 
 	return nil, output, nil
@@ -85,7 +93,10 @@ func (h *FollowupHandlers) LogInteraction(_ context.Context, _ *mcp.CallToolRequ
 	if err == nil {
 		contactID = parsedID
 	} else {
-		contacts, err := db.FindContacts(h.db, input.ContactID, nil, 10)
+		contacts, err := h.client.ListContacts(&charm.ContactFilter{
+			Query: input.ContactID,
+			Limit: 10,
+		})
 		if err != nil {
 			return nil, LogInteractionOutput{}, fmt.Errorf("failed to find contact: %w", err)
 		}
@@ -95,8 +106,16 @@ func (h *FollowupHandlers) LogInteraction(_ context.Context, _ *mcp.CallToolRequ
 		contactID = contacts[0].ID
 	}
 
-	interaction := &models.InteractionLog{
+	// Get contact name for denormalization
+	contact, err := h.client.GetContact(contactID)
+	if err != nil {
+		return nil, LogInteractionOutput{}, fmt.Errorf("failed to get contact: %w", err)
+	}
+
+	interaction := &charm.InteractionLog{
+		ID:              uuid.New(),
 		ContactID:       contactID,
+		ContactName:     contact.Name,
 		InteractionType: input.InteractionType,
 		Timestamp:       time.Now(),
 		Sentiment:       input.Sentiment,
@@ -106,13 +125,20 @@ func (h *FollowupHandlers) LogInteraction(_ context.Context, _ *mcp.CallToolRequ
 		interaction.Notes = *input.Notes
 	}
 
-	err = db.LogInteraction(h.db, interaction)
+	err = h.client.CreateInteractionLog(interaction)
 	if err != nil {
 		return nil, LogInteractionOutput{}, fmt.Errorf("failed to log interaction: %w", err)
 	}
 
+	// Update cadence after interaction
+	err = h.client.UpdateCadenceAfterInteraction(contactID, interaction.Timestamp)
+	if err != nil {
+		// Log but don't fail - the interaction was logged successfully
+		fmt.Printf("Warning: failed to update cadence: %v\n", err)
+	}
+
 	// Get updated priority
-	cadence, _ := db.GetContactCadence(h.db, contactID)
+	cadence, _ := h.client.GetContactCadence(contactID)
 	priority := 0.0
 	if cadence != nil {
 		priority = cadence.PriorityScore
@@ -146,7 +172,10 @@ func (h *FollowupHandlers) SetCadence(_ context.Context, _ *mcp.CallToolRequest,
 	if err == nil {
 		contactID = parsedID
 	} else {
-		contacts, err := db.FindContacts(h.db, input.ContactID, nil, 10)
+		contacts, err := h.client.ListContacts(&charm.ContactFilter{
+			Query: input.ContactID,
+			Limit: 10,
+		})
 		if err != nil {
 			return nil, SetCadenceOutput{}, fmt.Errorf("failed to find contact: %w", err)
 		}
@@ -156,7 +185,21 @@ func (h *FollowupHandlers) SetCadence(_ context.Context, _ *mcp.CallToolRequest,
 		contactID = contacts[0].ID
 	}
 
-	err = db.SetContactCadence(h.db, contactID, input.Days, input.Strength)
+	// Get contact name for denormalization
+	contact, err := h.client.GetContact(contactID)
+	if err != nil {
+		return nil, SetCadenceOutput{}, fmt.Errorf("failed to get contact: %w", err)
+	}
+
+	// Create or update cadence
+	cadence := &charm.ContactCadence{
+		ContactID:            contactID,
+		ContactName:          contact.Name,
+		CadenceDays:          input.Days,
+		RelationshipStrength: input.Strength,
+		PriorityScore:        0, // Will be recalculated
+	}
+	err = h.client.SaveContactCadence(cadence)
 	if err != nil {
 		return nil, SetCadenceOutput{}, fmt.Errorf("failed to set cadence: %w", err)
 	}

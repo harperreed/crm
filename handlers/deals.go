@@ -4,22 +4,20 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
+	"github.com/harperreed/pagen/charm"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type DealHandlers struct {
-	db *sql.DB
+	client *charm.Client
 }
 
-func NewDealHandlers(database *sql.DB) *DealHandlers {
-	return &DealHandlers{db: database}
+func NewDealHandlers(client *charm.Client) *DealHandlers {
+	return &DealHandlers{client: client}
 }
 
 type CreateDealInput struct {
@@ -63,7 +61,7 @@ func (h *DealHandlers) CreateDeal(_ context.Context, request *mcp.CallToolReques
 
 	stage := input.Stage
 	if stage == "" {
-		stage = models.StageProspecting
+		stage = charm.StageProspecting
 	}
 
 	// Validate stage
@@ -72,38 +70,44 @@ func (h *DealHandlers) CreateDeal(_ context.Context, request *mcp.CallToolReques
 	}
 
 	// Handle company lookup/creation (required)
-	company, err := db.FindCompanyByName(h.db, input.CompanyName)
+	company, err := h.client.FindCompanyByName(input.CompanyName)
 	if err != nil {
 		return nil, DealOutput{}, fmt.Errorf("failed to lookup company: %w", err)
 	}
 
 	if company == nil {
 		// Create new company
-		company = &models.Company{
+		company = &charm.Company{
 			Name: input.CompanyName,
 		}
-		if err := db.CreateCompany(h.db, company); err != nil {
+		if err := h.client.CreateCompany(company); err != nil {
 			return nil, DealOutput{}, fmt.Errorf("failed to create company: %w", err)
 		}
 	}
 
-	deal := &models.Deal{
-		Title:     input.Title,
-		Amount:    input.Amount,
-		Currency:  currency,
-		Stage:     stage,
-		CompanyID: company.ID,
+	deal := &charm.Deal{
+		Title:       input.Title,
+		Amount:      input.Amount,
+		Currency:    currency,
+		Stage:       stage,
+		CompanyID:   company.ID,
+		CompanyName: company.Name,
 	}
 
 	// Handle contact lookup if provided (optional)
 	if input.ContactName != "" {
-		contacts, err := db.FindContacts(h.db, input.ContactName, nil, 1)
+		filter := &charm.ContactFilter{
+			Query: input.ContactName,
+			Limit: 1,
+		}
+		contacts, err := h.client.ListContacts(filter)
 		if err != nil {
 			return nil, DealOutput{}, fmt.Errorf("failed to lookup contact: %w", err)
 		}
 
 		if len(contacts) > 0 {
 			deal.ContactID = &contacts[0].ID
+			deal.ContactName = contacts[0].Name
 		}
 	}
 
@@ -116,22 +120,24 @@ func (h *DealHandlers) CreateDeal(_ context.Context, request *mcp.CallToolReques
 		deal.ExpectedCloseDate = &parsedTime
 	}
 
-	if err := db.CreateDeal(h.db, deal); err != nil {
+	if err := h.client.CreateDeal(deal); err != nil {
 		return nil, DealOutput{}, fmt.Errorf("failed to create deal: %w", err)
 	}
 
 	// Add initial note if provided
 	if input.InitialNote != "" {
-		note := &models.DealNote{
-			DealID:  deal.ID,
-			Content: input.InitialNote,
+		note := &charm.DealNote{
+			DealID:          deal.ID,
+			DealTitle:       deal.Title,
+			DealCompanyName: deal.CompanyName,
+			Content:         input.InitialNote,
 		}
-		if err := db.AddDealNote(h.db, note); err != nil {
+		if err := h.client.CreateDealNote(note); err != nil {
 			return nil, DealOutput{}, fmt.Errorf("failed to add initial note: %w", err)
 		}
 
 		// Reload deal to get updated last_activity_at
-		deal, err = db.GetDeal(h.db, deal.ID)
+		deal, err = h.client.GetDeal(deal.ID)
 		if err != nil {
 			return nil, DealOutput{}, fmt.Errorf("failed to reload deal: %w", err)
 		}
@@ -159,12 +165,9 @@ func (h *DealHandlers) UpdateDeal(_ context.Context, request *mcp.CallToolReques
 		return nil, DealOutput{}, fmt.Errorf("invalid id: %w", err)
 	}
 
-	deal, err := db.GetDeal(h.db, dealID)
+	deal, err := h.client.GetDeal(dealID)
 	if err != nil {
 		return nil, DealOutput{}, fmt.Errorf("failed to get deal: %w", err)
-	}
-	if deal == nil {
-		return nil, DealOutput{}, fmt.Errorf("deal not found")
 	}
 
 	// Update fields if provided
@@ -191,7 +194,7 @@ func (h *DealHandlers) UpdateDeal(_ context.Context, request *mcp.CallToolReques
 		deal.ExpectedCloseDate = &parsedTime
 	}
 
-	if err := db.UpdateDeal(h.db, deal); err != nil {
+	if err := h.client.UpdateDeal(deal); err != nil {
 		return nil, DealOutput{}, fmt.Errorf("failed to update deal: %w", err)
 	}
 
@@ -223,28 +226,27 @@ func (h *DealHandlers) AddDealNote(_ context.Context, request *mcp.CallToolReque
 		return nil, DealNoteOutput{}, fmt.Errorf("invalid deal_id: %w", err)
 	}
 
-	// Verify deal exists
-	deal, err := db.GetDeal(h.db, dealID)
+	// Verify deal exists and get denormalized fields
+	deal, err := h.client.GetDeal(dealID)
 	if err != nil {
 		return nil, DealNoteOutput{}, fmt.Errorf("failed to get deal: %w", err)
 	}
-	if deal == nil {
-		return nil, DealNoteOutput{}, fmt.Errorf("deal not found")
+
+	note := &charm.DealNote{
+		DealID:          dealID,
+		DealTitle:       deal.Title,
+		DealCompanyName: deal.CompanyName,
+		Content:         input.Content,
 	}
 
-	note := &models.DealNote{
-		DealID:  dealID,
-		Content: input.Content,
-	}
-
-	if err := db.AddDealNote(h.db, note); err != nil {
+	if err := h.client.CreateDealNote(note); err != nil {
 		return nil, DealNoteOutput{}, fmt.Errorf("failed to add note: %w", err)
 	}
 
 	return nil, dealNoteToOutput(note), nil
 }
 
-func dealToOutput(deal *models.Deal) DealOutput {
+func dealToOutput(deal *charm.Deal) DealOutput {
 	output := DealOutput{
 		ID:             deal.ID.String(),
 		Title:          deal.Title,
@@ -270,7 +272,7 @@ func dealToOutput(deal *models.Deal) DealOutput {
 	return output
 }
 
-func dealNoteToOutput(note *models.DealNote) DealNoteOutput {
+func dealNoteToOutput(note *charm.DealNote) DealNoteOutput {
 	return DealNoteOutput{
 		ID:        note.ID.String(),
 		DealID:    note.DealID.String(),
@@ -298,7 +300,7 @@ func (h *DealHandlers) DeleteDeal(_ context.Context, request *mcp.CallToolReques
 		return nil, DeleteDealOutput{}, fmt.Errorf("invalid id: %w", err)
 	}
 
-	if err := db.DeleteDeal(h.db, dealID); err != nil {
+	if err := h.client.DeleteDeal(dealID); err != nil {
 		return nil, DeleteDealOutput{}, fmt.Errorf("failed to delete deal: %w", err)
 	}
 
@@ -310,12 +312,12 @@ func (h *DealHandlers) DeleteDeal(_ context.Context, request *mcp.CallToolReques
 
 func isValidStage(stage string) bool {
 	validStages := []string{
-		models.StageProspecting,
-		models.StageQualification,
-		models.StageProposal,
-		models.StageNegotiation,
-		models.StageClosedWon,
-		models.StageClosedLost,
+		charm.StageProspecting,
+		charm.StageQualification,
+		charm.StageProposal,
+		charm.StageNegotiation,
+		charm.StageClosedWon,
+		charm.StageClosedLost,
 	}
 
 	for _, valid := range validStages {
@@ -344,7 +346,7 @@ func (h *DealHandlers) CreateDeal_Legacy(args map[string]interface{}) (interface
 		currency = c
 	}
 
-	stage := models.StageProspecting
+	stage := charm.StageProspecting
 	if s, ok := args["stage"].(string); ok && s != "" {
 		stage = s
 	}
@@ -355,26 +357,27 @@ func (h *DealHandlers) CreateDeal_Legacy(args map[string]interface{}) (interface
 	}
 
 	// Handle company lookup/creation (required)
-	company, err := db.FindCompanyByName(h.db, companyName)
+	company, err := h.client.FindCompanyByName(companyName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup company: %w", err)
 	}
 
 	if company == nil {
 		// Create new company
-		company = &models.Company{
+		company = &charm.Company{
 			Name: companyName,
 		}
-		if err := db.CreateCompany(h.db, company); err != nil {
+		if err := h.client.CreateCompany(company); err != nil {
 			return nil, fmt.Errorf("failed to create company: %w", err)
 		}
 	}
 
-	deal := &models.Deal{
-		Title:     title,
-		Currency:  currency,
-		Stage:     stage,
-		CompanyID: company.ID,
+	deal := &charm.Deal{
+		Title:       title,
+		Currency:    currency,
+		Stage:       stage,
+		CompanyID:   company.ID,
+		CompanyName: company.Name,
 	}
 
 	// Handle amount
@@ -384,13 +387,18 @@ func (h *DealHandlers) CreateDeal_Legacy(args map[string]interface{}) (interface
 
 	// Handle contact lookup if provided (optional)
 	if contactName, ok := args["contact_name"].(string); ok && contactName != "" {
-		contacts, err := db.FindContacts(h.db, contactName, nil, 1)
+		filter := &charm.ContactFilter{
+			Query: contactName,
+			Limit: 1,
+		}
+		contacts, err := h.client.ListContacts(filter)
 		if err != nil {
 			return nil, fmt.Errorf("failed to lookup contact: %w", err)
 		}
 
 		if len(contacts) > 0 {
 			deal.ContactID = &contacts[0].ID
+			deal.ContactName = contacts[0].Name
 		}
 	}
 
@@ -403,22 +411,24 @@ func (h *DealHandlers) CreateDeal_Legacy(args map[string]interface{}) (interface
 		deal.ExpectedCloseDate = &parsedTime
 	}
 
-	if err := db.CreateDeal(h.db, deal); err != nil {
+	if err := h.client.CreateDeal(deal); err != nil {
 		return nil, fmt.Errorf("failed to create deal: %w", err)
 	}
 
 	// Add initial note if provided
 	if initialNote, ok := args["initial_note"].(string); ok && initialNote != "" {
-		note := &models.DealNote{
-			DealID:  deal.ID,
-			Content: initialNote,
+		note := &charm.DealNote{
+			DealID:          deal.ID,
+			DealTitle:       deal.Title,
+			DealCompanyName: deal.CompanyName,
+			Content:         initialNote,
 		}
-		if err := db.AddDealNote(h.db, note); err != nil {
+		if err := h.client.CreateDealNote(note); err != nil {
 			return nil, fmt.Errorf("failed to add initial note: %w", err)
 		}
 
 		// Reload deal to get updated last_activity_at
-		deal, err = db.GetDeal(h.db, deal.ID)
+		deal, err = h.client.GetDeal(deal.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to reload deal: %w", err)
 		}
@@ -438,12 +448,9 @@ func (h *DealHandlers) UpdateDeal_Legacy(args map[string]interface{}) (interface
 		return nil, fmt.Errorf("invalid id: %w", err)
 	}
 
-	deal, err := db.GetDeal(h.db, dealID)
+	deal, err := h.client.GetDeal(dealID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get deal: %w", err)
-	}
-	if deal == nil {
-		return nil, fmt.Errorf("deal not found")
 	}
 
 	// Update fields if provided
@@ -470,7 +477,7 @@ func (h *DealHandlers) UpdateDeal_Legacy(args map[string]interface{}) (interface
 		deal.ExpectedCloseDate = &parsedTime
 	}
 
-	if err := db.UpdateDeal(h.db, deal); err != nil {
+	if err := h.client.UpdateDeal(deal); err != nil {
 		return nil, fmt.Errorf("failed to update deal: %w", err)
 	}
 
@@ -493,28 +500,50 @@ func (h *DealHandlers) AddDealNote_Legacy(args map[string]interface{}) (interfac
 		return nil, fmt.Errorf("invalid deal_id: %w", err)
 	}
 
-	// Verify deal exists
-	deal, err := db.GetDeal(h.db, dealID)
+	// Verify deal exists and get denormalized fields
+	deal, err := h.client.GetDeal(dealID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get deal: %w", err)
 	}
-	if deal == nil {
-		return nil, fmt.Errorf("deal not found")
+
+	note := &charm.DealNote{
+		DealID:          dealID,
+		DealTitle:       deal.Title,
+		DealCompanyName: deal.CompanyName,
+		Content:         content,
 	}
 
-	note := &models.DealNote{
-		DealID:  dealID,
-		Content: content,
-	}
-
-	if err := db.AddDealNote(h.db, note); err != nil {
+	if err := h.client.CreateDealNote(note); err != nil {
 		return nil, fmt.Errorf("failed to add note: %w", err)
+	}
+
+	// Update deal's LastActivityAt - this is important for follow-up tracking
+	now := time.Now()
+	deal.LastActivityAt = now
+	if err := h.client.UpdateDeal(deal); err != nil {
+		// Return error since timestamp updates are critical for follow-up tracking
+		return nil, fmt.Errorf("note created but failed to update deal timestamp: %w", err)
+	}
+
+	// Update contact's LastContactedAt if deal has a contact
+	if deal.ContactID != nil {
+		contact, err := h.client.GetContact(*deal.ContactID)
+		if err != nil {
+			// Contact might not exist anymore - log but don't fail since note was created
+			// This can happen if contact was deleted after deal was created
+			_ = err // Contact not found is okay, skip timestamp update
+		} else if contact != nil {
+			contact.LastContactedAt = &now
+			if err := h.client.UpdateContact(contact); err != nil {
+				return nil, fmt.Errorf("note created but failed to update contact timestamp: %w", err)
+			}
+		}
 	}
 
 	return dealNoteToMap(note), nil
 }
 
-func dealToMap(deal *models.Deal) map[string]interface{} {
+func dealToMap(deal *charm.Deal) map[string]interface{} {
 	result := map[string]interface{}{
 		"id":               deal.ID.String(),
 		"title":            deal.Title,
@@ -538,7 +567,7 @@ func dealToMap(deal *models.Deal) map[string]interface{} {
 	return result
 }
 
-func dealNoteToMap(note *models.DealNote) map[string]interface{} {
+func dealNoteToMap(note *charm.DealNote) map[string]interface{} {
 	return map[string]interface{}{
 		"id":         note.ID.String(),
 		"deal_id":    note.DealID.String(),

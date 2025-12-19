@@ -4,27 +4,27 @@ package cli
 
 import (
 	"context"
-	"database/sql"
 	"log"
 
+	"github.com/harperreed/pagen/charm"
 	"github.com/harperreed/pagen/handlers"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // MCPCommand starts the MCP server on stdio.
-func MCPCommand(db *sql.DB) error {
+func MCPCommand(client *charm.Client) error {
 	log.Println("Starting CRM MCP Server...")
 
 	// Create handlers
-	companyHandlers := handlers.NewCompanyHandlers(db)
-	contactHandlers := handlers.NewContactHandlers(db)
-	dealHandlers := handlers.NewDealHandlers(db)
-	relationshipHandlers := handlers.NewRelationshipHandlers(db)
-	queryHandlers := handlers.NewQueryHandlers(db)
-	resourceHandlers := handlers.NewResourceHandlers(db)
-	promptHandlers := handlers.NewPromptHandlers(db)
-	vizHandlers := handlers.NewVizHandlers(db)
-	followupHandlers := handlers.NewFollowupHandlers(db)
+	companyHandlers := handlers.NewCompanyHandlers(client)
+	contactHandlers := handlers.NewContactHandlers(client)
+	dealHandlers := handlers.NewDealHandlers(client)
+	relationshipHandlers := handlers.NewRelationshipHandlers(client)
+	queryHandlers := handlers.NewQueryHandlers(client)
+	resourceHandlers := handlers.NewResourceHandlers(client)
+	promptHandlers := handlers.NewPromptHandlers(client)
+	vizHandlers := handlers.NewVizHandlers(client)
+	followupHandlers := handlers.NewFollowupHandlers(client)
 
 	// Create MCP server
 	server := mcp.NewServer(&mcp.Implementation{

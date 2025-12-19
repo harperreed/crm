@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
+	"github.com/harperreed/pagen/charm"
 )
 
 func TestAddContactHandler(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewContactHandlers(database)
+	handler := NewContactHandlers(client)
 
 	// Test valid contact creation
 	input := map[string]interface{}{
@@ -48,13 +48,13 @@ func TestAddContactHandler(t *testing.T) {
 }
 
 func TestAddContactWithCompanyName(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewContactHandlers(database)
+	handler := NewContactHandlers(client)
 
 	// First create a company
-	companyHandler := NewCompanyHandlers(database)
+	companyHandler := NewCompanyHandlers(client)
 	_, _ = companyHandler.AddCompany_Legacy(map[string]interface{}{
 		"name": "Acme Corp",
 	})
@@ -82,10 +82,10 @@ func TestAddContactWithCompanyName(t *testing.T) {
 }
 
 func TestAddContactCreatesNewCompany(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewContactHandlers(database)
+	handler := NewContactHandlers(client)
 
 	// Add contact with non-existent company (should create it)
 	input := map[string]interface{}{
@@ -108,21 +108,24 @@ func TestAddContactCreatesNewCompany(t *testing.T) {
 		t.Error("Company ID was not set")
 	}
 
-	// Verify company was created
-	company, err := db.FindCompanyByName(database, "New Corp")
+	// Verify company was created by searching for it
+	companies, err := client.ListCompanies(&charm.CompanyFilter{
+		Query: "New Corp",
+		Limit: 1,
+	})
 	if err != nil {
 		t.Fatalf("Failed to find company: %v", err)
 	}
-	if company == nil {
+	if len(companies) == 0 {
 		t.Error("Company was not created")
 	}
 }
 
 func TestAddContactValidation(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewContactHandlers(database)
+	handler := NewContactHandlers(client)
 
 	// Missing required name
 	input := map[string]interface{}{
@@ -136,10 +139,10 @@ func TestAddContactValidation(t *testing.T) {
 }
 
 func TestFindContactsHandler(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewContactHandlers(database)
+	handler := NewContactHandlers(client)
 
 	// Add test contacts
 	_, _ = handler.AddContact_Legacy(map[string]interface{}{"name": "Alice Smith", "email": "alice@example.com"})
@@ -167,10 +170,10 @@ func TestFindContactsHandler(t *testing.T) {
 }
 
 func TestFindContactsByEmail(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewContactHandlers(database)
+	handler := NewContactHandlers(client)
 
 	_, _ = handler.AddContact_Legacy(map[string]interface{}{"name": "Test User", "email": "unique@example.com"})
 
@@ -194,13 +197,13 @@ func TestFindContactsByEmail(t *testing.T) {
 }
 
 func TestFindContactsByCompanyID(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewContactHandlers(database)
+	handler := NewContactHandlers(client)
 
 	// Create company and contact
-	companyHandler := NewCompanyHandlers(database)
+	companyHandler := NewCompanyHandlers(client)
 	companyResult, _ := companyHandler.AddCompany_Legacy(map[string]interface{}{"name": "Test Corp"})
 	companyData := companyResult.(map[string]interface{})
 	companyID := companyData["id"].(string)
@@ -230,10 +233,10 @@ func TestFindContactsByCompanyID(t *testing.T) {
 }
 
 func TestUpdateContactHandler(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewContactHandlers(database)
+	handler := NewContactHandlers(client)
 
 	// Create contact
 	createResult, _ := handler.AddContact_Legacy(map[string]interface{}{
@@ -275,10 +278,10 @@ func TestUpdateContactHandler(t *testing.T) {
 }
 
 func TestUpdateContactNotFound(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewContactHandlers(database)
+	handler := NewContactHandlers(client)
 
 	input := map[string]interface{}{
 		"id":   uuid.New().String(),
@@ -292,10 +295,10 @@ func TestUpdateContactNotFound(t *testing.T) {
 }
 
 func TestLogContactInteractionHandler(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewContactHandlers(database)
+	handler := NewContactHandlers(client)
 
 	// Create contact
 	createResult, _ := handler.AddContact_Legacy(map[string]interface{}{
@@ -333,10 +336,10 @@ func TestLogContactInteractionHandler(t *testing.T) {
 }
 
 func TestLogContactInteractionWithCustomDate(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewContactHandlers(database)
+	handler := NewContactHandlers(client)
 
 	// Create contact
 	createResult, _ := handler.AddContact_Legacy(map[string]interface{}{
@@ -380,10 +383,10 @@ func TestLogContactInteractionWithCustomDate(t *testing.T) {
 }
 
 func TestLogContactInteractionNotFound(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewContactHandlers(database)
+	handler := NewContactHandlers(client)
 
 	input := map[string]interface{}{
 		"contact_id": uuid.New().String(),

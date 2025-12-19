@@ -3,44 +3,17 @@
 package cli
 
 import (
-	"context"
-	"database/sql"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"text/tabwriter"
 
-	"github.com/harperreed/sweet/vault"
-
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/db"
-	"github.com/harperreed/pagen/models"
-	"github.com/harperreed/pagen/sync"
+	"github.com/harperreed/pagen/charm"
 )
 
-// queueCompanyToVault queues a company change to vault sync.
-// Sync failures are non-fatal - the local operation already succeeded.
-func queueCompanyToVault(database *sql.DB, company *models.Company, op vault.Op) {
-	cfg, err := sync.LoadVaultConfig()
-	if err != nil || !cfg.IsConfigured() {
-		return
-	}
-
-	syncer, err := sync.NewVaultSyncer(cfg, database)
-	if err != nil {
-		log.Printf("warning: vault sync init failed: %v", err)
-		return
-	}
-	defer func() { _ = syncer.Close() }()
-
-	if err := syncer.QueueCompanyChange(context.Background(), company, op); err != nil {
-		log.Printf("warning: vault sync queue failed: %v", err)
-	}
-}
-
 // AddCompanyCommand adds a new company.
-func AddCompanyCommand(database *sql.DB, args []string) error {
+func AddCompanyCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("add-company", flag.ExitOnError)
 	name := fs.String("name", "", "Company name (required)")
 	domain := fs.String("domain", "", "Company domain (e.g., acme.com)")
@@ -52,19 +25,16 @@ func AddCompanyCommand(database *sql.DB, args []string) error {
 		return fmt.Errorf("--name is required")
 	}
 
-	company := &models.Company{
+	company := &charm.Company{
 		Name:     *name,
 		Domain:   *domain,
 		Industry: *industry,
 		Notes:    *notes,
 	}
 
-	if err := db.CreateCompany(database, company); err != nil {
+	if err := client.CreateCompany(company); err != nil {
 		return fmt.Errorf("failed to create company: %w", err)
 	}
-
-	// Queue to vault sync (non-fatal)
-	queueCompanyToVault(database, company, vault.OpUpsert)
 
 	fmt.Printf("✓ Company created: %s (ID: %s)\n", company.Name, company.ID)
 	if company.Domain != "" {
@@ -78,13 +48,18 @@ func AddCompanyCommand(database *sql.DB, args []string) error {
 }
 
 // ListCompaniesCommand lists all companies.
-func ListCompaniesCommand(database *sql.DB, args []string) error {
+func ListCompaniesCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("list-companies", flag.ExitOnError)
 	query := fs.String("query", "", "Search by name or domain")
 	limit := fs.Int("limit", 50, "Maximum results")
 	_ = fs.Parse(args)
 
-	companies, err := db.FindCompanies(database, *query, *limit)
+	filter := &charm.CompanyFilter{
+		Query: *query,
+		Limit: *limit,
+	}
+
+	companies, err := client.ListCompanies(filter)
 	if err != nil {
 		return fmt.Errorf("failed to find companies: %w", err)
 	}
@@ -119,7 +94,7 @@ func ListCompaniesCommand(database *sql.DB, args []string) error {
 }
 
 // UpdateCompanyCommand updates an existing company.
-func UpdateCompanyCommand(database *sql.DB, args []string) error {
+func UpdateCompanyCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("update-company", flag.ExitOnError)
 	name := fs.String("name", "", "Company name")
 	domain := fs.String("domain", "", "Domain")
@@ -138,12 +113,9 @@ func UpdateCompanyCommand(database *sql.DB, args []string) error {
 	}
 
 	// Get existing company
-	existing, err := db.GetCompany(database, companyID)
+	existing, err := client.GetCompany(companyID)
 	if err != nil {
 		return fmt.Errorf("company not found: %w", err)
-	}
-	if existing == nil {
-		return fmt.Errorf("company not found: %s", companyID)
 	}
 
 	// Apply updates from flags
@@ -160,20 +132,17 @@ func UpdateCompanyCommand(database *sql.DB, args []string) error {
 		existing.Notes = *notes
 	}
 
-	err = db.UpdateCompany(database, companyID, existing)
+	err = client.UpdateCompany(existing)
 	if err != nil {
 		return fmt.Errorf("failed to update company: %w", err)
 	}
-
-	// Queue to vault sync (non-fatal)
-	queueCompanyToVault(database, existing, vault.OpUpsert)
 
 	fmt.Printf("✓ Company updated: %s (ID: %s)\n", existing.Name, companyID)
 	return nil
 }
 
 // DeleteCompanyCommand deletes a company.
-func DeleteCompanyCommand(database *sql.DB, args []string) error {
+func DeleteCompanyCommand(client *charm.Client, args []string) error {
 	fs := flag.NewFlagSet("delete-company", flag.ExitOnError)
 	_ = fs.Parse(args)
 
@@ -187,22 +156,10 @@ func DeleteCompanyCommand(database *sql.DB, args []string) error {
 		return fmt.Errorf("invalid company ID: %w", err)
 	}
 
-	// Get company before deletion for vault sync
-	company, err := db.GetCompany(database, companyID)
-	if err != nil {
-		return fmt.Errorf("company not found: %w", err)
-	}
-	if company == nil {
-		return fmt.Errorf("company not found: %s", companyID)
-	}
-
-	err = db.DeleteCompany(database, companyID)
+	err = client.DeleteCompany(companyID)
 	if err != nil {
 		return fmt.Errorf("failed to delete company: %w", err)
 	}
-
-	// Queue to vault sync (non-fatal)
-	queueCompanyToVault(database, company, vault.OpDelete)
 
 	fmt.Printf("✓ Company deleted: %s\n", companyID)
 	return nil

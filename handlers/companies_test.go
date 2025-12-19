@@ -3,29 +3,16 @@
 package handlers
 
 import (
-	"database/sql"
 	"testing"
 
-	"github.com/harperreed/pagen/db"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/harperreed/pagen/charm"
 )
 
-func setupTestDB(t *testing.T) *sql.DB {
-	database, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open test db: %v", err)
-	}
-	if err := db.InitSchema(database); err != nil {
-		t.Fatalf("Failed to init schema: %v", err)
-	}
-	return database
-}
-
 func TestAddCompanyHandler(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewCompanyHandlers(database)
+	handler := NewCompanyHandlers(client)
 
 	input := map[string]interface{}{
 		"name":     "Test Corp",
@@ -55,10 +42,10 @@ func TestAddCompanyHandler(t *testing.T) {
 }
 
 func TestAddCompanyValidation(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewCompanyHandlers(database)
+	handler := NewCompanyHandlers(client)
 
 	// Missing required name
 	input := map[string]interface{}{
@@ -72,10 +59,10 @@ func TestAddCompanyValidation(t *testing.T) {
 }
 
 func TestFindCompaniesHandler(t *testing.T) {
-	database := setupTestDB(t)
-	defer func() { _ = database.Close() }()
+	client, cleanup := charm.NewTestClient(t)
+	defer cleanup()
 
-	handler := NewCompanyHandlers(database)
+	handler := NewCompanyHandlers(client)
 
 	// Add test companies
 	_, _ = handler.AddCompany_Legacy(map[string]interface{}{"name": "Acme Corp"})

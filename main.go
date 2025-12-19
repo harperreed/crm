@@ -7,12 +7,10 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 
-	"github.com/adrg/xdg"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/harperreed/pagen/charm"
 	"github.com/harperreed/pagen/cli"
-	"github.com/harperreed/pagen/db"
 	"github.com/harperreed/pagen/tui"
 	"github.com/harperreed/pagen/web"
 	"github.com/joho/godotenv"
@@ -27,8 +25,7 @@ func main() {
 	// Global flags
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	showHelp := flag.Bool("help", false, "Show help and exit")
-	dbPath := flag.String("db-path", "", "Database path (default: ~/.local/share/pagen/pagen.db)")
-	initOnly := flag.Bool("init", false, "Initialize database and exit")
+	initOnly := flag.Bool("init", false, "Initialize Charm KV and exit")
 
 	// Parse global flags but don't fail on unknown (for subcommands)
 	_ = flag.CommandLine.Parse(os.Args[1:])
@@ -63,17 +60,15 @@ func main() {
 
 `)
 
-		finalDBPath := getDatabasePath(*dbPath)
-		database, err := db.OpenDatabase(finalDBPath)
+		client, err := charm.GetClient()
 		if err != nil {
-			log.Fatalf("Failed to open database: %v", err)
+			log.Fatalf("Failed to initialize Charm KV: %v", err)
 		}
-		defer func() { _ = database.Close() }()
 
 		fmt.Println("  🔐 Loading interactive interface...")
 		fmt.Println()
 
-		tuiModel := tui.NewModel(database)
+		tuiModel := tui.NewModel(client)
 		p := tea.NewProgram(tuiModel, tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
 			log.Fatalf("TUI error: %v", err)
@@ -87,32 +82,28 @@ func main() {
 
 	switch command {
 	case "mcp":
-		// MCP server doesn't need database init message
-		finalDBPath := getDatabasePath(*dbPath)
-		database, err := db.OpenDatabase(finalDBPath)
+		// MCP server uses Charm KV
+		client, err := charm.GetClient()
 		if err != nil {
-			log.Fatalf("Failed to open database: %v", err)
+			log.Fatalf("Failed to initialize Charm KV: %v", err)
 		}
-		defer func() { _ = database.Close() }()
 
-		if err := cli.MCPCommand(database); err != nil {
+		if err := cli.MCPCommand(client); err != nil {
 			log.Fatalf("MCP server failed: %v", err)
 		}
 
 	case "crm":
-		// CRM subcommands - initialize database with message
-		finalDBPath := getDatabasePath(*dbPath)
-		database, err := db.OpenDatabase(finalDBPath)
+		// CRM subcommands - use Charm KV
+		client, err := charm.GetClient()
 		if err != nil {
-			log.Fatalf("Failed to open database: %v", err)
+			log.Fatalf("Failed to initialize Charm KV: %v", err)
 		}
-		defer func() { _ = database.Close() }()
 
-		log.Printf("CRM database: %s", finalDBPath)
+		log.Printf("CRM using Charm KV (server: %s)", client.Config().Host)
 
 		// Handle init-only flag
 		if *initOnly {
-			log.Println("Database initialized successfully")
+			log.Println("Charm KV initialized successfully")
 			os.Exit(0)
 		}
 
@@ -128,61 +119,61 @@ func main() {
 		switch crmCommand {
 		// Contact commands
 		case "add-contact":
-			if err := cli.AddContactCommand(database, crmArgs); err != nil {
+			if err := cli.AddContactCommand(client, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "list-contacts":
-			if err := cli.ListContactsCommand(database, crmArgs); err != nil {
+			if err := cli.ListContactsCommand(client, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "update-contact":
-			if err := cli.UpdateContactCommand(database, crmArgs); err != nil {
+			if err := cli.UpdateContactCommand(client, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "delete-contact":
-			if err := cli.DeleteContactCommand(database, crmArgs); err != nil {
+			if err := cli.DeleteContactCommand(client, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 
 		// Company commands
 		case "add-company":
-			if err := cli.AddCompanyCommand(database, crmArgs); err != nil {
+			if err := cli.AddCompanyCommand(client, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "list-companies":
-			if err := cli.ListCompaniesCommand(database, crmArgs); err != nil {
+			if err := cli.ListCompaniesCommand(client, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "update-company":
-			if err := cli.UpdateCompanyCommand(database, crmArgs); err != nil {
+			if err := cli.UpdateCompanyCommand(client, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "delete-company":
-			if err := cli.DeleteCompanyCommand(database, crmArgs); err != nil {
+			if err := cli.DeleteCompanyCommand(client, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 
 		// Deal commands
 		case "add-deal":
-			if err := cli.AddDealCommand(database, crmArgs); err != nil {
+			if err := cli.AddDealCommand(client, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "list-deals":
-			if err := cli.ListDealsCommand(database, crmArgs); err != nil {
+			if err := cli.ListDealsCommand(client, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "delete-deal":
-			if err := cli.DeleteDealCommand(database, crmArgs); err != nil {
+			if err := cli.DeleteDealCommand(client, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 
 		// Relationship commands
 		case "update-relationship":
-			if err := cli.UpdateRelationshipCommand(database, crmArgs); err != nil {
+			if err := cli.UpdateRelationshipCommand(client, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "delete-relationship":
-			if err := cli.DeleteRelationshipCommand(database, crmArgs); err != nil {
+			if err := cli.DeleteRelationshipCommand(client, crmArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 
@@ -193,19 +184,17 @@ func main() {
 		}
 
 	case "viz":
-		// Visualization subcommands
-		finalDBPath := getDatabasePath(*dbPath)
-		database, err := db.OpenDatabase(finalDBPath)
+		// Visualization subcommands - use Charm KV
+		client, err := charm.GetClient()
 		if err != nil {
-			log.Fatalf("Failed to open database: %v", err)
+			log.Fatalf("Failed to initialize Charm KV: %v", err)
 		}
-		defer func() { _ = database.Close() }()
 
-		log.Printf("CRM database: %s", finalDBPath)
+		log.Printf("Viz using Charm KV (server: %s)", client.Config().Host)
 
 		if len(commandArgs) == 0 {
 			// No subcommand = dashboard
-			if err := cli.VizDashboardCommand(database, commandArgs); err != nil {
+			if err := cli.VizDashboardCommand(client, commandArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 			return
@@ -227,19 +216,19 @@ func main() {
 
 			switch graphType {
 			case "all":
-				if err := cli.VizGraphAllCommand(database, graphArgs); err != nil {
+				if err := cli.VizGraphAllCommand(client, graphArgs); err != nil {
 					log.Fatalf("Error: %v", err)
 				}
 			case "contacts":
-				if err := cli.VizGraphContactsCommand(database, graphArgs); err != nil {
+				if err := cli.VizGraphContactsCommand(client, graphArgs); err != nil {
 					log.Fatalf("Error: %v", err)
 				}
 			case "company":
-				if err := cli.VizGraphCompanyCommand(database, graphArgs); err != nil {
+				if err := cli.VizGraphCompanyCommand(client, graphArgs); err != nil {
 					log.Fatalf("Error: %v", err)
 				}
 			case "pipeline":
-				if err := cli.VizGraphPipelineCommand(database, graphArgs); err != nil {
+				if err := cli.VizGraphPipelineCommand(client, graphArgs); err != nil {
 					log.Fatalf("Error: %v", err)
 				}
 			default:
@@ -260,14 +249,12 @@ func main() {
 			_, _ = fmt.Sscanf(commandArgs[1], "%d", &port)
 		}
 
-		finalDBPath := getDatabasePath(*dbPath)
-		database, err := db.OpenDatabase(finalDBPath)
+		client, err := charm.GetClient()
 		if err != nil {
-			log.Fatalf("Failed to open database: %v", err)
+			log.Fatalf("Failed to initialize Charm KV: %v", err)
 		}
-		defer func() { _ = database.Close() }()
 
-		server, err := web.NewServer(database)
+		server, err := web.NewServer(client)
 		if err != nil {
 			log.Fatalf("Failed to create web server: %v", err)
 		}
@@ -277,15 +264,13 @@ func main() {
 		}
 
 	case "followups":
-		// Follow-up tracking subcommands
-		finalDBPath := getDatabasePath(*dbPath)
-		database, err := db.OpenDatabase(finalDBPath)
+		// Follow-up tracking subcommands - use Charm KV
+		client, err := charm.GetClient()
 		if err != nil {
-			log.Fatalf("Failed to open database: %v", err)
+			log.Fatalf("Failed to initialize Charm KV: %v", err)
 		}
-		defer func() { _ = database.Close() }()
 
-		log.Printf("CRM database: %s", finalDBPath)
+		log.Printf("Followups using Charm KV (server: %s)", client.Config().Host)
 
 		if len(commandArgs) == 0 {
 			fmt.Println("Usage: pagen followups <command>")
@@ -298,23 +283,23 @@ func main() {
 
 		switch followupCommand {
 		case "list":
-			if err := cli.FollowupListCommand(database, followupArgs); err != nil {
+			if err := cli.FollowupListCommand(client, followupArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "log":
-			if err := cli.LogInteractionCommand(database, followupArgs); err != nil {
+			if err := cli.LogInteractionCommand(client, followupArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "set-cadence":
-			if err := cli.SetCadenceCommand(database, followupArgs); err != nil {
+			if err := cli.SetCadenceCommand(client, followupArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "stats":
-			if err := cli.FollowupStatsCommand(database, followupArgs); err != nil {
+			if err := cli.FollowupStatsCommand(client, followupArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "digest":
-			if err := cli.DigestCommand(database, followupArgs); err != nil {
+			if err := cli.DigestCommand(client, followupArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		default:
@@ -324,88 +309,69 @@ func main() {
 		}
 
 	case "sync":
-		// Google sync subcommands
-		finalDBPath := getDatabasePath(*dbPath)
-		database, err := db.OpenDatabase(finalDBPath)
-		if err != nil {
-			log.Fatalf("Failed to open database: %v", err)
-		}
-		defer func() { _ = database.Close() }()
-
-		log.Printf("CRM database: %s", finalDBPath)
-
-		// If no subcommand, sync all services
+		// Charm KV sync commands
 		if len(commandArgs) == 0 {
-			if err := cli.SyncAllCommand(database); err != nil {
-				log.Fatalf("Error: %v", err)
-			}
-			return
+			fmt.Println("Usage: pagen sync <command>")
+			fmt.Println("Commands: link, status, unlink, wipe, now, auto")
+			os.Exit(1)
 		}
 
 		syncCommand := commandArgs[0]
 		syncArgs := commandArgs[1:]
 
 		switch syncCommand {
-		case "init":
-			if err := cli.SyncInitCommand(database, syncArgs); err != nil {
-				log.Fatalf("Error: %v", err)
-			}
-		case "contacts":
-			if err := cli.SyncContactsCommand(database, syncArgs); err != nil {
-				log.Fatalf("Error: %v", err)
-			}
-		case "calendar":
-			if err := cli.SyncCalendarCommand(database, syncArgs); err != nil {
-				log.Fatalf("Error: %v", err)
-			}
-		case "gmail":
-			if err := cli.SyncGmailCommand(database, syncArgs); err != nil {
+		// Charm sync commands
+		case "link":
+			if err := charm.SyncLinkCommand(syncArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
 		case "status":
-			if err := cli.SyncStatusCommand(database, syncArgs); err != nil {
+			if err := charm.SyncStatusCommand(syncArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
-		case "reset":
-			if err := cli.SyncResetCommand(database, syncArgs); err != nil {
+		case "unlink":
+			if err := charm.SyncUnlinkCommand(syncArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
-		case "daemon":
-			if err := cli.SyncDaemonCommand(database, syncArgs); err != nil {
+		case "wipe":
+			if err := charm.SyncWipeCommand(syncArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
-		case "vault-init":
-			if err := cli.SyncVaultInitCommand(database, syncArgs); err != nil {
+		case "now":
+			if err := charm.SyncNowCommand(syncArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
-		case "vault-login":
-			if err := cli.SyncVaultLoginCommand(database, syncArgs); err != nil {
+		case "auto":
+			if err := charm.SetAutoSyncCommand(syncArgs); err != nil {
 				log.Fatalf("Error: %v", err)
 			}
-		case "vault-status":
-			if err := cli.SyncVaultStatusCommand(database, syncArgs); err != nil {
-				log.Fatalf("Error: %v", err)
-			}
-		case "vault-now":
-			if err := cli.SyncVaultNowCommand(database, syncArgs); err != nil {
-				log.Fatalf("Error: %v", err)
-			}
-		case "vault-pending":
-			if err := cli.SyncVaultPendingCommand(database, syncArgs); err != nil {
-				log.Fatalf("Error: %v", err)
-			}
-		case "vault-logout":
-			if err := cli.SyncVaultLogoutCommand(database, syncArgs); err != nil {
-				log.Fatalf("Error: %v", err)
-			}
-		case "vault-wipe":
-			if err := cli.SyncVaultWipeCommand(database, syncArgs); err != nil {
-				log.Fatalf("Error: %v", err)
-			}
+
+		// Legacy Google sync commands (deprecated - now using Charm KV)
+		case "init", "contacts", "calendar", "gmail", "reset", "daemon":
+			fmt.Printf("Command 'sync %s' is deprecated.\n", syncCommand)
+			fmt.Println("Google sync has been replaced by Charm KV sync.")
+			fmt.Println("Available sync commands:")
+			fmt.Println("  sync link   - Link this device to Charm cloud")
+			fmt.Println("  sync status - Show sync status")
+			fmt.Println("  sync now    - Sync immediately")
+			fmt.Println("  sync auto   - Configure auto-sync")
+			fmt.Println("  sync unlink - Unlink device")
+			fmt.Println("  sync wipe   - Wipe all synced data")
+			os.Exit(1)
+
+		// Legacy vault commands (deprecated)
+		case "vault-init", "vault-login", "vault-status", "vault-now", "vault-pending", "vault-logout", "vault-wipe", "charm-status":
+			fmt.Printf("Command '%s' is deprecated. Use the new sync commands instead:\n", syncCommand)
+			fmt.Println("  sync link   - Link this device")
+			fmt.Println("  sync status - Show sync status")
+			fmt.Println("  sync unlink - Unlink device")
+			fmt.Println("  sync wipe   - Wipe all data")
+			fmt.Println("  sync now    - Sync immediately")
+			os.Exit(1)
+
 		default:
 			fmt.Printf("Unknown sync command: %s\n", syncCommand)
-			fmt.Println("Commands: init, contacts, calendar, gmail, status, reset, daemon")
-			fmt.Println("Vault commands: vault-init, vault-login, vault-status, vault-now, vault-pending, vault-logout, vault-wipe")
+			fmt.Println("Commands: link, status, unlink, wipe, now, auto")
 			os.Exit(1)
 		}
 
@@ -416,13 +382,6 @@ func main() {
 	}
 }
 
-func getDatabasePath(dbPath string) string {
-	if dbPath != "" {
-		return dbPath
-	}
-	return filepath.Join(xdg.DataHome, "pagen", "pagen.db")
-}
-
 func printUsage() {
 	fmt.Printf(`pagen v%s - Personal Agent toolkit
 
@@ -431,8 +390,7 @@ USAGE:
 
 GLOBAL FLAGS:
   --version              Show version and exit
-  --db-path <path>       Database path (default: ~/.local/share/pagen/pagen.db)
-  --init                 Initialize database and exit (use with 'crm')
+  --init                 Initialize Charm KV and exit (use with 'crm')
 
 COMMANDS:
   (none)                 Launch interactive TUI (default)
@@ -520,57 +478,23 @@ WEB UI:
   pagen web                      Start web UI server at http://localhost:8080
     --port <port>                 Port to listen on (default: 8080)
 
-SYNC COMMANDS:
-  pagen sync                     Sync all Google services (contacts, calendar, gmail)
+SYNC COMMANDS (Charm KV Cloud Sync):
+  pagen sync link                Link this device to Charm cloud
+                                 Uses SSH key authentication
+                                 Creates encrypted cloud backup
 
-  pagen sync init                Setup Google OAuth authentication
-                                 Opens browser for Google login
-                                 Saves credentials for future syncs
+  pagen sync status              Show sync status and configuration
 
-  pagen sync contacts            Sync Google Contacts
-                                 Imports all contacts with emails and phone numbers
-
-  pagen sync calendar            Sync Google Calendar events
-    --initial                     Full import (last 6 months)
-                                 Default: incremental sync
-
-  pagen sync gmail               Sync Gmail (high-signal emails only)
-    --initial                     Import last 30 days
-                                 Default: incremental sync (last 7 days)
-                                 NOTE: Only imports replied-to and starred emails
-
-  pagen sync daemon              Run sync in daemon mode (foreground)
-    --interval <duration>         Sync interval (default: 1h, minimum: 5m)
-                                 Examples: 15m, 1h, 4h, 24h
-    --services <list>             Services to sync (default: all)
-                                 Options: contacts, calendar, gmail, all
-                                 Multiple: contacts,calendar
-
-  pagen sync status              Show sync status for all services
-
-  pagen sync reset <service>     Reset stuck sync state
-                                 Services: contacts, calendar, gmail, all
-
-  pagen sync vault-init          Initialize E2E encrypted vault sync
-                                 Generates a unique device ID for this device
-
-  pagen sync vault-login         Login to vault sync server
-                                 Authenticates with email, password, and recovery phrase
-                                 Default server: https://api.storeusa.org
-
-  pagen sync vault-status        Show vault sync status
-                                 Displays configuration and pending changes
-
-  pagen sync vault-now           Sync vault now
+  pagen sync now                 Sync immediately
                                  Pushes local changes and pulls remote updates
 
-  pagen sync vault-pending       Show pending changes waiting to sync
+  pagen sync auto <on|off>       Enable or disable auto-sync on write
 
-  pagen sync vault-logout        Logout from vault sync
-                                 Clears tokens but preserves recovery key
+  pagen sync unlink              Unlink this device from cloud sync
+                                 Clears sync configuration but preserves local data
 
-  pagen sync vault-wipe          Remove all vault sync data
-                                 WARNING: Deletes local vault database
+  pagen sync wipe                Remove all synced data
+                                 WARNING: Deletes cloud data for this user
 
 EXAMPLES:
   # Start MCP server for Claude Desktop
@@ -588,16 +512,14 @@ EXAMPLES:
   # List deals in negotiation stage
   pagen crm list-deals --stage negotiation
 
-  # Setup Google authentication
-  pagen sync init
+  # Link device to Charm cloud sync
+  pagen sync link
 
-  # Sync all Google services at once
-  pagen sync
+  # Check sync status
+  pagen sync status
 
-  # Sync specific services
-  pagen sync contacts
-  pagen sync calendar --initial
-  pagen sync gmail
+  # Sync now
+  pagen sync now
 
 `, version)
 }

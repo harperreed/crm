@@ -53,7 +53,7 @@ func (m Model) handleGraphKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) generateGraph() error {
-	generator := viz.NewGraphGenerator(m.db)
+	generator := viz.NewGraphGenerator(m.client)
 
 	var dot string
 	var err error
