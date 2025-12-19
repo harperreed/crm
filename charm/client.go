@@ -47,7 +47,7 @@ func InitClient() error {
 		// Set charm host before opening KV
 		_ = os.Setenv("CHARM_HOST", cfg.Host)
 
-		db, err := kv.OpenWithDefaults(AppName)
+		db, err := kv.OpenWithDefaultsFallback(AppName)
 		if err != nil {
 			clientErr = fmt.Errorf("failed to open charm kv: %w", err)
 			return
@@ -58,8 +58,8 @@ func InitClient() error {
 			config: cfg,
 		}
 
-		// Sync on startup to pull remote changes
-		if cfg.AutoSync {
+		// Sync on startup to pull remote changes (skip if read-only)
+		if cfg.AutoSync && !db.IsReadOnly() {
 			_ = db.Sync()
 		}
 	})
@@ -85,7 +85,7 @@ func NewClient(cfg *Config) (*Client, error) {
 
 	_ = os.Setenv("CHARM_HOST", cfg.Host)
 
-	db, err := kv.OpenWithDefaults(AppName)
+	db, err := kv.OpenWithDefaultsFallback(AppName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open charm kv: %w", err)
 	}
@@ -95,8 +95,8 @@ func NewClient(cfg *Config) (*Client, error) {
 		config: cfg,
 	}
 
-	// Sync on startup to pull remote changes
-	if cfg.AutoSync {
+	// Sync on startup to pull remote changes (skip if read-only)
+	if cfg.AutoSync && !db.IsReadOnly() {
 		_ = db.Sync()
 	}
 
@@ -195,6 +195,17 @@ func (c *Client) IsConnected() bool {
 	return err == nil
 }
 
+// IsReadOnly returns true if the database is open in read-only mode.
+// This happens when another process (like an MCP server) holds the lock.
+func (c *Client) IsReadOnly() bool {
+	if c.testClient != nil {
+		return false // Test client is never read-only
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.kv.IsReadOnly()
+}
+
 // Sync performs a manual sync with the charm server.
 func (c *Client) Sync() error {
 	if c.testClient != nil {
@@ -202,7 +213,10 @@ func (c *Client) Sync() error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.kv.Sync()
+	if !c.kv.IsReadOnly() {
+		return c.kv.Sync()
+	}
+	return nil
 }
 
 // Get retrieves a value by key.
@@ -223,6 +237,10 @@ func (c *Client) Set(key, value []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.kv.IsReadOnly() {
+		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
+	}
+
 	if err := c.kv.Set(key, value); err != nil {
 		return err
 	}
@@ -241,6 +259,10 @@ func (c *Client) Delete(key []byte) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.kv.IsReadOnly() {
+		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
+	}
 
 	if err := c.kv.Delete(key); err != nil {
 		return err
@@ -286,5 +308,8 @@ func (c *Client) Reset() error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.kv.IsReadOnly() {
+		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
+	}
 	return c.kv.Reset()
 }
