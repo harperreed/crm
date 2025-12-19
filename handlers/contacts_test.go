@@ -11,8 +11,7 @@ import (
 )
 
 func TestAddContactHandler(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewContactHandlers(client)
 
@@ -48,8 +47,7 @@ func TestAddContactHandler(t *testing.T) {
 }
 
 func TestAddContactWithCompanyName(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewContactHandlers(client)
 
@@ -82,8 +80,7 @@ func TestAddContactWithCompanyName(t *testing.T) {
 }
 
 func TestAddContactCreatesNewCompany(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewContactHandlers(client)
 
@@ -122,8 +119,7 @@ func TestAddContactCreatesNewCompany(t *testing.T) {
 }
 
 func TestAddContactValidation(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewContactHandlers(client)
 
@@ -139,8 +135,7 @@ func TestAddContactValidation(t *testing.T) {
 }
 
 func TestFindContactsHandler(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewContactHandlers(client)
 
@@ -170,8 +165,7 @@ func TestFindContactsHandler(t *testing.T) {
 }
 
 func TestFindContactsByEmail(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewContactHandlers(client)
 
@@ -197,8 +191,7 @@ func TestFindContactsByEmail(t *testing.T) {
 }
 
 func TestFindContactsByCompanyID(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewContactHandlers(client)
 
@@ -233,8 +226,7 @@ func TestFindContactsByCompanyID(t *testing.T) {
 }
 
 func TestUpdateContactHandler(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewContactHandlers(client)
 
@@ -278,8 +270,7 @@ func TestUpdateContactHandler(t *testing.T) {
 }
 
 func TestUpdateContactNotFound(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewContactHandlers(client)
 
@@ -295,8 +286,7 @@ func TestUpdateContactNotFound(t *testing.T) {
 }
 
 func TestLogContactInteractionHandler(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewContactHandlers(client)
 
@@ -336,8 +326,7 @@ func TestLogContactInteractionHandler(t *testing.T) {
 }
 
 func TestLogContactInteractionWithCustomDate(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewContactHandlers(client)
 
@@ -383,8 +372,7 @@ func TestLogContactInteractionWithCustomDate(t *testing.T) {
 }
 
 func TestLogContactInteractionNotFound(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewContactHandlers(client)
 

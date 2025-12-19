@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/charm/client"
 	"github.com/charmbracelet/charm/kv"
@@ -18,12 +19,20 @@ var (
 	clientErr    error
 )
 
+// connectionCheckTTL is how long to cache the connection status.
+const connectionCheckTTL = 30 * time.Second
+
 // Client wraps charm KV with config and sync helpers.
 type Client struct {
 	kv         *kv.KV
 	config     *Config
 	mu         sync.RWMutex
 	testClient *testClient // Used for testing without server dependency
+
+	// Cached connection state to avoid repeated network calls
+	cachedConnected   bool
+	cachedConnectedAt time.Time
+	cachedUserID      string
 }
 
 // InitClient initializes the global charm client (thread-safe, only runs once).
@@ -103,31 +112,85 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// Config returns the client's config.
+// Config returns a copy of the client's config (thread-safe).
 func (c *Client) Config() *Config {
 	if c.testClient != nil {
 		return c.testClient.Config()
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.config
+	// Return a copy to prevent race conditions
+	return &Config{
+		Host:     c.config.Host,
+		AutoSync: c.config.AutoSync,
+	}
 }
 
 // ID returns the charm user ID for this device.
+// Results are cached to avoid repeated network calls.
 func (c *Client) ID() (string, error) {
+	if c.testClient != nil {
+		return "test-user-id", nil
+	}
+
+	c.mu.RLock()
+	// Return cached ID if still valid
+	if c.cachedUserID != "" && time.Since(c.cachedConnectedAt) < connectionCheckTTL {
+		c.mu.RUnlock()
+		return c.cachedUserID, nil
+	}
+	c.mu.RUnlock()
+
+	// Need to refresh - acquire write lock
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if c.cachedUserID != "" && time.Since(c.cachedConnectedAt) < connectionCheckTTL {
+		return c.cachedUserID, nil
+	}
+
+	// Make the network call
 	cc, err := client.NewClientWithDefaults()
 	if err != nil {
+		c.cachedConnected = false
+		c.cachedConnectedAt = time.Now()
+		c.cachedUserID = ""
 		return "", fmt.Errorf("failed to create charm client: %w", err)
 	}
-	return cc.ID()
+
+	id, err := cc.ID()
+	if err != nil {
+		c.cachedConnected = false
+		c.cachedConnectedAt = time.Now()
+		c.cachedUserID = ""
+		return "", err
+	}
+
+	// Cache the successful result
+	c.cachedConnected = true
+	c.cachedConnectedAt = time.Now()
+	c.cachedUserID = id
+	return id, nil
 }
 
 // IsConnected checks if the client can connect to charm cloud.
-// Returns true if we can get a user ID, false otherwise.
+// Uses cached connection status to avoid repeated network calls.
 func (c *Client) IsConnected() bool {
 	if c.testClient != nil {
 		return true // Test client is always "connected"
 	}
+
+	c.mu.RLock()
+	// Return cached status if still valid
+	if !c.cachedConnectedAt.IsZero() && time.Since(c.cachedConnectedAt) < connectionCheckTTL {
+		connected := c.cachedConnected
+		c.mu.RUnlock()
+		return connected
+	}
+	c.mu.RUnlock()
+
+	// Cache is stale, refresh by calling ID()
 	_, err := c.ID()
 	return err == nil
 }

@@ -11,8 +11,7 @@ import (
 )
 
 func TestSyncViewRendering(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	// Create model
 	m := NewModel(client)
@@ -38,8 +37,7 @@ func TestSyncViewRendering(t *testing.T) {
 }
 
 func TestSyncViewShowsStatus(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	// Create model
 	m := NewModel(client)
@@ -65,8 +63,7 @@ func TestSyncViewShowsStatus(t *testing.T) {
 }
 
 func TestSyncKeyNavigation(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	m := NewModel(client)
 	m.entityType = EntitySync
@@ -100,8 +97,7 @@ func TestSyncKeyNavigation(t *testing.T) {
 }
 
 func TestSyncCompleteMessage(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	m := NewModel(client)
 
@@ -127,8 +123,7 @@ func TestSyncCompleteMessage(t *testing.T) {
 }
 
 func TestSyncCompleteWithError(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	m := NewModel(client)
 
@@ -154,8 +149,7 @@ func TestSyncCompleteWithError(t *testing.T) {
 }
 
 func TestAutoSyncToggleMessage(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	m := NewModel(client)
 
@@ -187,8 +181,7 @@ func TestAutoSyncToggleMessage(t *testing.T) {
 }
 
 func TestAutoSyncToggleWithError(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	m := NewModel(client)
 
@@ -207,8 +200,7 @@ func TestAutoSyncToggleWithError(t *testing.T) {
 }
 
 func TestSyncMessageAddition(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	m := NewModel(client)
 

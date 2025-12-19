@@ -10,8 +10,7 @@ import (
 )
 
 func TestFollowupListCommand(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	// Will test that command runs without error
 	// Detailed output testing will be manual
@@ -22,8 +21,7 @@ func TestFollowupListCommand(t *testing.T) {
 }
 
 func TestLogInteractionCommand(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	// Create a contact first
 	contact := &charm.Contact{ID: uuid.New(), Name: "Alice", Email: "alice@example.com"}

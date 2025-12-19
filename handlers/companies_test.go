@@ -9,8 +9,7 @@ import (
 )
 
 func TestAddCompanyHandler(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewCompanyHandlers(client)
 
@@ -42,8 +41,7 @@ func TestAddCompanyHandler(t *testing.T) {
 }
 
 func TestAddCompanyValidation(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewCompanyHandlers(client)
 
@@ -59,8 +57,7 @@ func TestAddCompanyValidation(t *testing.T) {
 }
 
 func TestFindCompaniesHandler(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handler := NewCompanyHandlers(client)
 

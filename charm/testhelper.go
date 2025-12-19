@@ -137,9 +137,9 @@ func (c *testClient) Reset() error {
 }
 
 // NewTestClient creates a charm client using a temporary directory for testing.
-// The returned cleanup function should be deferred to remove the temp directory.
+// Cleanup is automatic via t.Cleanup() - no manual defer needed.
 // This implementation uses BadgerDB directly, avoiding the charm server dependency.
-func NewTestClient(t *testing.T) (*Client, func()) {
+func NewTestClient(t *testing.T) *Client {
 	t.Helper()
 
 	// Create temp directory for test data
@@ -181,10 +181,10 @@ func NewTestClient(t *testing.T) (*Client, func()) {
 	}
 
 	// Return a Client with nil kv but using the test implementation
-	// We'll modify the Client struct to handle this
 	c := newTestClientWrapper(tc)
 
-	cleanup := func() {
+	// Register cleanup with testing framework - runs even on panic
+	t.Cleanup(func() {
 		if db != nil {
 			if err := db.Close(); err != nil {
 				t.Logf("Warning: failed to close test database: %v", err)
@@ -193,9 +193,9 @@ func NewTestClient(t *testing.T) (*Client, func()) {
 		if err := os.RemoveAll(tmpDir); err != nil {
 			t.Logf("Warning: failed to remove temp directory %s: %v", tmpDir, err)
 		}
-	}
+	})
 
-	return c, cleanup
+	return c
 }
 
 // newTestClientWrapper creates a Client that uses the testClient for storage.

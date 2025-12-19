@@ -12,8 +12,7 @@ import (
 )
 
 func TestQueryCRMContacts(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	// Create test company and contacts
 	company := &charm.Company{ID: uuid.New(), Name: "Test Corp"}
@@ -108,8 +107,7 @@ func TestQueryCRMContacts(t *testing.T) {
 }
 
 func TestQueryCRMCompanies(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	// Create test companies
 	company1 := &charm.Company{
@@ -174,8 +172,7 @@ func TestQueryCRMCompanies(t *testing.T) {
 }
 
 func TestQueryCRMDeals(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	// Create test company and deals
 	company := &charm.Company{ID: uuid.New(), Name: "Deal Corp"}
@@ -295,8 +292,7 @@ func TestQueryCRMDeals(t *testing.T) {
 }
 
 func TestQueryCRMRelationships(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	// Create test contacts
 	contact1 := &charm.Contact{ID: uuid.New(), Name: "Alice"}
@@ -370,8 +366,7 @@ func TestQueryCRMRelationships(t *testing.T) {
 }
 
 func TestQueryCRMInvalidEntityType(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	handlers := NewQueryHandlers(client)
 

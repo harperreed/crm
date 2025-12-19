@@ -10,8 +10,7 @@ import (
 )
 
 func TestGenerateContactGraph(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	// Create test data
 	company := &charm.Company{ID: uuid.New(), Name: "Test Corp", Domain: "test.com", Industry: "Tech"}
@@ -56,8 +55,7 @@ func TestGenerateContactGraph(t *testing.T) {
 }
 
 func TestGenerateCompanyGraph(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	// Create test data
 	company := &charm.Company{ID: uuid.New(), Name: "Test Corp", Domain: "test.com", Industry: "Tech"}
@@ -92,8 +90,7 @@ func TestGenerateCompanyGraph(t *testing.T) {
 }
 
 func TestGeneratePipelineGraph(t *testing.T) {
-	client, cleanup := charm.NewTestClient(t)
-	defer cleanup()
+	client := charm.NewTestClient(t)
 
 	// Create test data
 	company := &charm.Company{ID: uuid.New(), Name: "Test Corp", Domain: "test.com", Industry: "Tech"}

@@ -6,8 +6,6 @@ package charm
 import (
 	"flag"
 	"fmt"
-
-	"github.com/charmbracelet/charm/client"
 )
 
 // SyncLinkCommand links this device to a Charm account
@@ -35,13 +33,8 @@ func SyncLinkCommand(args []string) error {
 		return fmt.Errorf("link failed: %w", err)
 	}
 
-	// Get and display ID
-	cc, err := client.NewClientWithDefaults()
-	if err != nil {
-		return fmt.Errorf("failed to get charm client: %w", err)
-	}
-
-	id, err := cc.ID()
+	// Get and display ID using the client's cached method
+	id, err := c.ID()
 	if err != nil {
 		fmt.Println("✓ Device linked (ID unavailable)")
 	} else {
@@ -73,15 +66,16 @@ func showSyncStatus(cfg *Config) error {
 	fmt.Printf("Server:    %s\n", cfg.Host)
 	fmt.Printf("Auto-sync: %v\n", cfg.AutoSync)
 
-	// Try to get user ID to check connection status
-	cc, err := client.NewClientWithDefaults()
+	// Get client to check connection status
+	c, err := GetClient()
 	if err != nil {
 		fmt.Println("\nStatus: Not connected")
 		fmt.Println("\nCharm uses SSH keys for authentication - no login required!")
-		return nil //nolint:nilerr // Intentionally returning nil - not connected is a valid state, not an error
+		return nil //nolint:nilerr // Not connected is a valid state
 	}
 
-	id, err := cc.ID()
+	// Use client's cached ID method
+	id, err := c.ID()
 	if err != nil {
 		fmt.Println("\nStatus: Connected (ID unavailable)")
 	} else {
@@ -90,12 +84,9 @@ func showSyncStatus(cfg *Config) error {
 	}
 
 	// Show KV stats
-	c, err := GetClient()
+	keys, err := c.Keys()
 	if err == nil {
-		keys, err := c.Keys()
-		if err == nil {
-			fmt.Printf("Keys:      %d\n", len(keys))
-		}
+		fmt.Printf("Keys:      %d\n", len(keys))
 	}
 
 	fmt.Println("\nCharm uses SSH keys for authentication - no login required!")
