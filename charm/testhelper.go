@@ -180,8 +180,12 @@ func NewTestClient(t *testing.T) *Client {
 		config: cfg,
 	}
 
-	// Return a Client with nil kv but using the test implementation
-	c := newTestClientWrapper(tc)
+	// Return a Client with the test implementation
+	c := &Client{
+		dbName:     AppName,
+		autoSync:   false,
+		testClient: tc,
+	}
 
 	// Register cleanup with testing framework - runs even on panic
 	t.Cleanup(func() {
@@ -196,13 +200,4 @@ func NewTestClient(t *testing.T) *Client {
 	})
 
 	return c
-}
-
-// newTestClientWrapper creates a Client that uses the testClient for storage.
-func newTestClientWrapper(tc *testClient) *Client {
-	return &Client{
-		kv:         nil, // Use test implementation
-		config:     tc.config,
-		testClient: tc, // Store test client
-	}
 }
