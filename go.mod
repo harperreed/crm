@@ -3,7 +3,7 @@ module github.com/harperreed/pagen
 go 1.24.0
 
 // Use 2389-research charm fork for self-hosted server (charm.2389.dev) with stale sync support
-replace github.com/charmbracelet/charm => github.com/2389-research/charm v0.19.0
+replace github.com/charmbracelet/charm => github.com/2389-research/charm v0.20.0
 
 require (
 	github.com/adrg/xdg v0.5.3
