@@ -7,20 +7,20 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestQueryCRMContacts(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	// Create test company and contacts
-	company := &charm.Company{ID: uuid.New(), Name: "Test Corp"}
+	company := &repository.Company{ID: uuid.New(), Name: "Test Corp"}
 	if err := client.CreateCompany(company); err != nil {
 		t.Fatalf("Failed to create company: %v", err)
 	}
 
-	contact1 := &charm.Contact{
+	contact1 := &repository.Contact{
 		ID:          uuid.New(),
 		Name:        "Alice Smith",
 		Email:       "alice@example.com",
@@ -31,7 +31,7 @@ func TestQueryCRMContacts(t *testing.T) {
 		t.Fatalf("Failed to create contact1: %v", err)
 	}
 
-	contact2 := &charm.Contact{
+	contact2 := &repository.Contact{
 		ID:    uuid.New(),
 		Name:  "Bob Jones",
 		Email: "bob@example.com",
@@ -107,10 +107,10 @@ func TestQueryCRMContacts(t *testing.T) {
 }
 
 func TestQueryCRMCompanies(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	// Create test companies
-	company1 := &charm.Company{
+	company1 := &repository.Company{
 		ID:     uuid.New(),
 		Name:   "Alpha Corp",
 		Domain: "alpha.com",
@@ -119,7 +119,7 @@ func TestQueryCRMCompanies(t *testing.T) {
 		t.Fatalf("Failed to create company1: %v", err)
 	}
 
-	company2 := &charm.Company{
+	company2 := &repository.Company{
 		ID:     uuid.New(),
 		Name:   "Beta Inc",
 		Domain: "beta.com",
@@ -172,20 +172,20 @@ func TestQueryCRMCompanies(t *testing.T) {
 }
 
 func TestQueryCRMDeals(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	// Create test company and deals
-	company := &charm.Company{ID: uuid.New(), Name: "Deal Corp"}
+	company := &repository.Company{ID: uuid.New(), Name: "Deal Corp"}
 	if err := client.CreateCompany(company); err != nil {
 		t.Fatalf("Failed to create company: %v", err)
 	}
 
-	deal1 := &charm.Deal{
+	deal1 := &repository.Deal{
 		ID:          uuid.New(),
 		Title:       "Big Deal",
 		Amount:      100000,
 		Currency:    "USD",
-		Stage:       charm.StageProspecting,
+		Stage:       repository.StageProspecting,
 		CompanyID:   company.ID,
 		CompanyName: company.Name,
 	}
@@ -193,12 +193,12 @@ func TestQueryCRMDeals(t *testing.T) {
 		t.Fatalf("Failed to create deal1: %v", err)
 	}
 
-	deal2 := &charm.Deal{
+	deal2 := &repository.Deal{
 		ID:          uuid.New(),
 		Title:       "Small Deal",
 		Amount:      5000,
 		Currency:    "USD",
-		Stage:       charm.StageNegotiation,
+		Stage:       repository.StageNegotiation,
 		CompanyID:   company.ID,
 		CompanyName: company.Name,
 	}
@@ -234,7 +234,7 @@ func TestQueryCRMDeals(t *testing.T) {
 		input := QueryCRMInput{
 			EntityType: "deal",
 			Filters: map[string]interface{}{
-				"stage": charm.StageProspecting,
+				"stage": repository.StageProspecting,
 			},
 			Limit: 10,
 		}
@@ -292,21 +292,21 @@ func TestQueryCRMDeals(t *testing.T) {
 }
 
 func TestQueryCRMRelationships(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	// Create test contacts
-	contact1 := &charm.Contact{ID: uuid.New(), Name: "Alice"}
+	contact1 := &repository.Contact{ID: uuid.New(), Name: "Alice"}
 	if err := client.CreateContact(contact1); err != nil {
 		t.Fatalf("Failed to create contact1: %v", err)
 	}
 
-	contact2 := &charm.Contact{ID: uuid.New(), Name: "Bob"}
+	contact2 := &repository.Contact{ID: uuid.New(), Name: "Bob"}
 	if err := client.CreateContact(contact2); err != nil {
 		t.Fatalf("Failed to create contact2: %v", err)
 	}
 
 	// Create relationship
-	rel := &charm.Relationship{
+	rel := &repository.Relationship{
 		ID:               uuid.New(),
 		ContactID1:       contact1.ID,
 		ContactID2:       contact2.ID,
@@ -366,7 +366,7 @@ func TestQueryCRMRelationships(t *testing.T) {
 }
 
 func TestQueryCRMInvalidEntityType(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handlers := NewQueryHandlers(client)
 

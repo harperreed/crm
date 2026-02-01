@@ -3,13 +3,13 @@
 package viz
 
 import (
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 )
 
 type GraphGenerator struct {
-	client *charm.Client
+	db *repository.DB
 }
 
-func NewGraphGenerator(client *charm.Client) *GraphGenerator {
-	return &GraphGenerator{client: client}
+func NewGraphGenerator(db *repository.DB) *GraphGenerator {
+	return &GraphGenerator{db: db}
 }

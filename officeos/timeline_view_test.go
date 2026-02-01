@@ -52,12 +52,12 @@ func TestTimelineView_RenderActivities(t *testing.T) {
 		t.Error("Expected actor name")
 	}
 
-	if !strings.Contains(output, "created") {
-		t.Error("Expected created verb")
+	if !strings.Contains(output, "[+]") {
+		t.Error("Expected created verb indicator [+]")
 	}
 
-	if !strings.Contains(output, "updated") {
-		t.Error("Expected updated verb")
+	if !strings.Contains(output, "[~]") {
+		t.Error("Expected updated verb indicator [~]")
 	}
 
 	if !strings.Contains(output, "record") {
@@ -192,20 +192,26 @@ func TestTimelineView_SetSize(t *testing.T) {
 	}
 }
 
-func TestTimelineView_VerbColors(t *testing.T) {
+func TestTimelineView_VerbIndicators(t *testing.T) {
 	store := NewMemoryStore()
 	timeline := NewTimeline(store)
 	view := NewTimelineView(timeline, 80, 24)
 
-	// Test that different verbs produce styled outputs by checking they render
-	verbs := []ActivityVerb{VerbCreated, VerbUpdated, VerbDeleted, VerbViewed}
+	// Test that different verbs produce text indicators
+	tests := []struct {
+		verb     ActivityVerb
+		expected string
+	}{
+		{VerbCreated, "+"},
+		{VerbUpdated, "~"},
+		{VerbDeleted, "-"},
+		{VerbViewed, "."},
+	}
 
-	for _, verb := range verbs {
-		style := view.getVerbStyle(verb)
-		// Just verify the style can be used to render
-		output := style.Render(string(verb))
-		if output == "" {
-			t.Errorf("Expected non-empty output for verb %s", verb)
+	for _, tt := range tests {
+		indicator := view.getVerbIndicator(tt.verb)
+		if indicator != tt.expected {
+			t.Errorf("Expected indicator %s for verb %s, got %s", tt.expected, tt.verb, indicator)
 		}
 	}
 }

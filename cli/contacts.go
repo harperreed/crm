@@ -12,14 +12,14 @@ import (
 	"github.com/harperreed/sweet/vault"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 	"github.com/harperreed/pagen/sync"
 )
 
 // queueContactToVault queues a contact change to vault sync.
 // Sync failures are non-fatal - the local operation already succeeded.
 // NOTE: Currently disabled during migration to charm KV - will be re-enabled when vault sync is migrated.
-func queueContactToVault(client *charm.Client, contact *charm.Contact, op vault.Op) {
+func queueContactToVault(client *repository.DB, contact *repository.Contact, op vault.Op) {
 	cfg, err := sync.LoadVaultConfig()
 	if err != nil || !cfg.IsConfigured() {
 		return // Vault sync not configured, silently skip
@@ -33,7 +33,7 @@ func queueContactToVault(client *charm.Client, contact *charm.Contact, op vault.
 }
 
 // AddContactCommand adds a new contact.
-func AddContactCommand(client *charm.Client, args []string) error {
+func AddContactCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("add-contact", flag.ExitOnError)
 	name := fs.String("name", "", "Contact name (required)")
 	email := fs.String("email", "", "Email address")
@@ -46,7 +46,7 @@ func AddContactCommand(client *charm.Client, args []string) error {
 		return fmt.Errorf("--name is required")
 	}
 
-	contact := &charm.Contact{
+	contact := &repository.Contact{
 		Name:  *name,
 		Email: *email,
 		Phone: *phone,
@@ -62,7 +62,7 @@ func AddContactCommand(client *charm.Client, args []string) error {
 
 		if existingCompany == nil {
 			// Create company
-			newCompany := &charm.Company{Name: *company}
+			newCompany := &repository.Company{Name: *company}
 			if err := client.CreateCompany(newCompany); err != nil {
 				return fmt.Errorf("failed to create company: %w", err)
 			}
@@ -96,7 +96,7 @@ func AddContactCommand(client *charm.Client, args []string) error {
 }
 
 // ListContactsCommand lists all contacts.
-func ListContactsCommand(client *charm.Client, args []string) error {
+func ListContactsCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("list-contacts", flag.ExitOnError)
 	query := fs.String("query", "", "Search by name or email")
 	company := fs.String("company", "", "Filter by company name")
@@ -114,7 +114,7 @@ func ListContactsCommand(client *charm.Client, args []string) error {
 		}
 	}
 
-	contacts, err := client.ListContacts(&charm.ContactFilter{
+	contacts, err := client.ListContacts(&repository.ContactFilter{
 		Query:     *query,
 		CompanyID: companyIDPtr,
 		Limit:     *limit,
@@ -158,7 +158,7 @@ func ListContactsCommand(client *charm.Client, args []string) error {
 }
 
 // UpdateContactCommand updates an existing contact.
-func UpdateContactCommand(client *charm.Client, args []string) error {
+func UpdateContactCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("update-contact", flag.ExitOnError)
 	name := fs.String("name", "", "Contact name")
 	email := fs.String("email", "", "Email address")
@@ -222,7 +222,7 @@ func UpdateContactCommand(client *charm.Client, args []string) error {
 }
 
 // DeleteContactCommand deletes a contact.
-func DeleteContactCommand(client *charm.Client, args []string) error {
+func DeleteContactCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("delete-contact", flag.ExitOnError)
 	_ = fs.Parse(args)
 

@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 )
 
 func TestCreateDeal(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 
@@ -52,7 +52,7 @@ func TestCreateDeal(t *testing.T) {
 }
 
 func TestCreateDealWithContactName(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 
@@ -87,7 +87,7 @@ func TestCreateDealWithContactName(t *testing.T) {
 }
 
 func TestCreateDealWithoutContact(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 
@@ -114,7 +114,7 @@ func TestCreateDealWithoutContact(t *testing.T) {
 }
 
 func TestCreateDealWithInitialNote(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 
@@ -153,7 +153,7 @@ func TestCreateDealWithInitialNote(t *testing.T) {
 }
 
 func TestCreateDealDefaults(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 
@@ -183,7 +183,7 @@ func TestCreateDealDefaults(t *testing.T) {
 }
 
 func TestCreateDealValidation(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 
@@ -209,7 +209,7 @@ func TestCreateDealValidation(t *testing.T) {
 }
 
 func TestUpdateDeal(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 
@@ -255,7 +255,7 @@ func TestUpdateDeal(t *testing.T) {
 }
 
 func TestUpdateDealStage(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 
@@ -289,7 +289,7 @@ func TestUpdateDealStage(t *testing.T) {
 }
 
 func TestUpdateDealExpectedCloseDate(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 
@@ -324,7 +324,7 @@ func TestUpdateDealExpectedCloseDate(t *testing.T) {
 }
 
 func TestUpdateDealNotFound(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 
@@ -340,7 +340,7 @@ func TestUpdateDealNotFound(t *testing.T) {
 }
 
 func TestUpdateDealInvalidStage(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 
@@ -365,7 +365,7 @@ func TestUpdateDealInvalidStage(t *testing.T) {
 }
 
 func TestAddDealNote(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 
@@ -411,7 +411,7 @@ func TestAddDealNote(t *testing.T) {
 }
 
 func TestAddDealNoteUpdatesContactLastContactedAt(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 
@@ -457,7 +457,7 @@ func TestAddDealNoteUpdatesContactLastContactedAt(t *testing.T) {
 }
 
 func TestAddDealNoteNotFound(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewDealHandlers(client)
 

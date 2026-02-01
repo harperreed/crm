@@ -9,16 +9,16 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type ResourceHandlers struct {
-	client *charm.Client
+	db *repository.DB
 }
 
-func NewResourceHandlers(client *charm.Client) *ResourceHandlers {
-	return &ResourceHandlers{client: client}
+func NewResourceHandlers(db *repository.DB) *ResourceHandlers {
+	return &ResourceHandlers{db: db}
 }
 
 // ReadResource handles resource read requests.
@@ -60,7 +60,7 @@ func (h *ResourceHandlers) ReadResource(ctx context.Context, request *mcp.ReadRe
 }
 
 func (h *ResourceHandlers) readAllContacts() (*mcp.ReadResourceResult, error) {
-	contacts, err := h.client.ListContacts(&charm.ContactFilter{Limit: 1000})
+	contacts, err := h.db.ListContacts(&repository.ContactFilter{Limit: 1000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch contacts: %w", err)
 	}
@@ -85,7 +85,7 @@ func (h *ResourceHandlers) readContact(idStr string) (*mcp.ReadResourceResult, e
 		return nil, fmt.Errorf("invalid contact ID: %w", err)
 	}
 
-	contact, err := h.client.GetContact(id)
+	contact, err := h.db.GetContact(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch contact: %w", err)
 	}
@@ -105,7 +105,7 @@ func (h *ResourceHandlers) readContact(idStr string) (*mcp.ReadResourceResult, e
 }
 
 func (h *ResourceHandlers) readAllCompanies() (*mcp.ReadResourceResult, error) {
-	companies, err := h.client.ListCompanies(&charm.CompanyFilter{Limit: 1000})
+	companies, err := h.db.ListCompanies(&repository.CompanyFilter{Limit: 1000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch companies: %w", err)
 	}
@@ -130,20 +130,20 @@ func (h *ResourceHandlers) readCompany(idStr string) (*mcp.ReadResourceResult, e
 		return nil, fmt.Errorf("invalid company ID: %w", err)
 	}
 
-	company, err := h.client.GetCompany(id)
+	company, err := h.db.GetCompany(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch company: %w", err)
 	}
 
 	// Include associated contacts
-	contacts, err := h.client.ListContacts(&charm.ContactFilter{CompanyID: &id, Limit: 1000})
+	contacts, err := h.db.ListContacts(&repository.ContactFilter{CompanyID: &id, Limit: 1000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch company contacts: %w", err)
 	}
 
 	companyData := struct {
-		*charm.Company
-		Contacts []*charm.Contact `json:"contacts"`
+		*repository.Company
+		Contacts []*repository.Contact `json:"contacts"`
 	}{
 		Company:  company,
 		Contacts: contacts,
@@ -164,7 +164,7 @@ func (h *ResourceHandlers) readCompany(idStr string) (*mcp.ReadResourceResult, e
 }
 
 func (h *ResourceHandlers) readAllDeals() (*mcp.ReadResourceResult, error) {
-	deals, err := h.client.ListDeals(&charm.DealFilter{Limit: 1000})
+	deals, err := h.db.ListDeals(&repository.DealFilter{Limit: 1000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch deals: %w", err)
 	}
@@ -189,20 +189,20 @@ func (h *ResourceHandlers) readDeal(idStr string) (*mcp.ReadResourceResult, erro
 		return nil, fmt.Errorf("invalid deal ID: %w", err)
 	}
 
-	deal, err := h.client.GetDeal(id)
+	deal, err := h.db.GetDeal(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch deal: %w", err)
 	}
 
 	// Include deal notes/history
-	notes, err := h.client.ListDealNotes(id)
+	notes, err := h.db.ListDealNotes(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch deal notes: %w", err)
 	}
 
 	dealData := struct {
-		*charm.Deal
-		Notes []*charm.DealNote `json:"notes"`
+		*repository.Deal
+		Notes []*repository.DealNote `json:"notes"`
 	}{
 		Deal:  deal,
 		Notes: notes,
@@ -223,7 +223,7 @@ func (h *ResourceHandlers) readDeal(idStr string) (*mcp.ReadResourceResult, erro
 }
 
 func (h *ResourceHandlers) readPipeline() (*mcp.ReadResourceResult, error) {
-	allDeals, err := h.client.ListDeals(&charm.DealFilter{Limit: 10000})
+	allDeals, err := h.db.ListDeals(&repository.DealFilter{Limit: 10000})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch deals: %w", err)
 	}

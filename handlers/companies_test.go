@@ -5,11 +5,11 @@ package handlers
 import (
 	"testing"
 
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 )
 
 func TestAddCompanyHandler(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewCompanyHandlers(client)
 
@@ -41,7 +41,7 @@ func TestAddCompanyHandler(t *testing.T) {
 }
 
 func TestAddCompanyValidation(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewCompanyHandlers(client)
 
@@ -57,7 +57,7 @@ func TestAddCompanyValidation(t *testing.T) {
 }
 
 func TestFindCompaniesHandler(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewCompanyHandlers(client)
 

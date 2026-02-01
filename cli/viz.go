@@ -8,12 +8,12 @@ import (
 	"os"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 	"github.com/harperreed/pagen/viz"
 )
 
 // VizGraphContactsCommand generates a contact relationship network graph.
-func VizGraphContactsCommand(client *charm.Client, args []string) error {
+func VizGraphContactsCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("viz graph contacts", flag.ExitOnError)
 	output := fs.String("output", "", "Output file (default: stdout)")
 
@@ -46,7 +46,7 @@ func VizGraphContactsCommand(client *charm.Client, args []string) error {
 }
 
 // VizGraphCompanyCommand generates a company org chart.
-func VizGraphCompanyCommand(client *charm.Client, args []string) error {
+func VizGraphCompanyCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("viz graph company", flag.ExitOnError)
 	output := fs.String("output", "", "Output file (default: stdout)")
 
@@ -78,7 +78,7 @@ func VizGraphCompanyCommand(client *charm.Client, args []string) error {
 }
 
 // VizGraphPipelineCommand generates a deal pipeline graph.
-func VizGraphPipelineCommand(client *charm.Client, args []string) error {
+func VizGraphPipelineCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("viz graph pipeline", flag.ExitOnError)
 	output := fs.String("output", "", "Output file (default: stdout)")
 
@@ -101,7 +101,7 @@ func VizGraphPipelineCommand(client *charm.Client, args []string) error {
 }
 
 // VizGraphAllCommand generates a complete graph with all entities.
-func VizGraphAllCommand(client *charm.Client, args []string) error {
+func VizGraphAllCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("viz graph all", flag.ExitOnError)
 	output := fs.String("output", "", "Output file (default: stdout)")
 
@@ -123,7 +123,7 @@ func VizGraphAllCommand(client *charm.Client, args []string) error {
 	return nil
 }
 
-func VizDashboardCommand(client *charm.Client, args []string) error {
+func VizDashboardCommand(client *repository.DB, args []string) error {
 	stats, err := viz.GenerateDashboardStats(client)
 	if err != nil {
 		return fmt.Errorf("failed to generate dashboard stats: %w", err)

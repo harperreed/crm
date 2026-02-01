@@ -9,11 +9,11 @@ import (
 	"text/tabwriter"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 )
 
 // AddDealCommand adds a new deal.
-func AddDealCommand(client *charm.Client, args []string) error {
+func AddDealCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("add-deal", flag.ExitOnError)
 	title := fs.String("title", "", "Deal title (required)")
 	company := fs.String("company", "", "Company name (required)")
@@ -40,7 +40,7 @@ func AddDealCommand(client *charm.Client, args []string) error {
 	var companyUUID uuid.UUID
 	var companyName string
 	if existingCompany == nil {
-		newCompany := &charm.Company{Name: *company}
+		newCompany := &repository.Company{Name: *company}
 		if err := client.CreateCompany(newCompany); err != nil {
 			return fmt.Errorf("failed to create company: %w", err)
 		}
@@ -55,14 +55,14 @@ func AddDealCommand(client *charm.Client, args []string) error {
 	var contactUUID *uuid.UUID
 	var contactName string
 	if *contact != "" {
-		contacts, err := client.ListContacts(&charm.ContactFilter{Query: *contact, Limit: 1})
+		contacts, err := client.ListContacts(&repository.ContactFilter{Query: *contact, Limit: 1})
 		if err != nil {
 			return fmt.Errorf("failed to lookup contact: %w", err)
 		}
 
 		if len(contacts) == 0 {
 			// Create contact
-			newContact := &charm.Contact{Name: *contact, CompanyID: &companyUUID, CompanyName: companyName}
+			newContact := &repository.Contact{Name: *contact, CompanyID: &companyUUID, CompanyName: companyName}
 			if err := client.CreateContact(newContact); err != nil {
 				return fmt.Errorf("failed to create contact: %w", err)
 			}
@@ -74,7 +74,7 @@ func AddDealCommand(client *charm.Client, args []string) error {
 		}
 	}
 
-	deal := &charm.Deal{
+	deal := &repository.Deal{
 		Title:       *title,
 		Amount:      *amount,
 		Currency:    *currency,
@@ -101,7 +101,7 @@ func AddDealCommand(client *charm.Client, args []string) error {
 
 	// Add initial note if provided
 	if *notes != "" {
-		note := &charm.DealNote{
+		note := &repository.DealNote{
 			DealID:          deal.ID,
 			DealTitle:       deal.Title,
 			DealCompanyName: companyName,
@@ -118,14 +118,14 @@ func AddDealCommand(client *charm.Client, args []string) error {
 }
 
 // ListDealsCommand lists all deals.
-func ListDealsCommand(client *charm.Client, args []string) error {
+func ListDealsCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("list-deals", flag.ExitOnError)
 	stage := fs.String("stage", "", "Filter by stage")
 	company := fs.String("company", "", "Filter by company name")
 	limit := fs.Int("limit", 50, "Maximum results")
 	_ = fs.Parse(args)
 
-	filter := &charm.DealFilter{
+	filter := &repository.DealFilter{
 		Stage: *stage,
 		Limit: *limit,
 	}
@@ -179,7 +179,7 @@ func ListDealsCommand(client *charm.Client, args []string) error {
 }
 
 // DeleteDealCommand deletes a deal.
-func DeleteDealCommand(client *charm.Client, args []string) error {
+func DeleteDealCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("delete-deal", flag.ExitOnError)
 	_ = fs.Parse(args)
 

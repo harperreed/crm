@@ -5,27 +5,34 @@ package cli
 import (
 	"testing"
 
-	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 )
 
 func TestFollowupListCommand(t *testing.T) {
-	client := charm.NewTestClient(t)
+	db, cleanup, err := repository.NewTestDB()
+	if err != nil {
+		t.Fatalf("Failed to create test DB: %v", err)
+	}
+	defer cleanup()
 
 	// Will test that command runs without error
 	// Detailed output testing will be manual
-	err := FollowupListCommand(client, []string{})
+	err = FollowupListCommand(db, []string{})
 	if err != nil {
 		t.Errorf("FollowupListCommand failed: %v", err)
 	}
 }
 
 func TestLogInteractionCommand(t *testing.T) {
-	client := charm.NewTestClient(t)
+	db, cleanup, err := repository.NewTestDB()
+	if err != nil {
+		t.Fatalf("Failed to create test DB: %v", err)
+	}
+	defer cleanup()
 
 	// Create a contact first
-	contact := &charm.Contact{ID: uuid.New(), Name: "Alice", Email: "alice@example.com"}
-	if err := client.CreateContact(contact); err != nil {
+	contact := &repository.Contact{Name: "Alice", Email: "alice@example.com"}
+	if err := db.CreateContact(contact); err != nil {
 		t.Fatalf("failed to create contact: %v", err)
 	}
 
@@ -35,13 +42,13 @@ func TestLogInteractionCommand(t *testing.T) {
 		"--notes", "Coffee chat",
 	}
 
-	err := LogInteractionCommand(client, args)
+	err = LogInteractionCommand(db, args)
 	if err != nil {
 		t.Errorf("LogInteractionCommand failed: %v", err)
 	}
 
 	// Verify interaction was logged
-	logs, err := client.ListInteractionLogs(&charm.InteractionFilter{
+	logs, err := db.ListInteractionLogs(&repository.InteractionFilter{
 		ContactID: &contact.ID,
 		Limit:     10,
 	})

@@ -9,7 +9,7 @@ import (
 
 	"github.com/goccy/go-graphviz"
 	"github.com/goccy/go-graphviz/cgraph"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 )
 
 // GenerateCompleteGraph creates a comprehensive graph with all contacts, companies, and deals.
@@ -38,17 +38,17 @@ func (g *GraphGenerator) GenerateCompleteGraph() (string, error) {
 	graph.SetLabel("Complete CRM Graph")
 
 	// Get all entities
-	contacts, err := g.client.ListContacts(&charm.ContactFilter{Limit: 10000})
+	contacts, err := g.db.ListContacts(&repository.ContactFilter{Limit: 10000})
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch contacts: %w", err)
 	}
 
-	companies, err := g.client.ListCompanies(&charm.CompanyFilter{Limit: 10000})
+	companies, err := g.db.ListCompanies(&repository.CompanyFilter{Limit: 10000})
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch companies: %w", err)
 	}
 
-	deals, err := g.client.ListDeals(&charm.DealFilter{Limit: 10000})
+	deals, err := g.db.ListDeals(&repository.DealFilter{Limit: 10000})
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch deals: %w", err)
 	}
@@ -128,7 +128,7 @@ func (g *GraphGenerator) GenerateCompleteGraph() (string, error) {
 	}
 
 	// Get relationships between contacts
-	relationships, err := g.client.ListRelationships(nil)
+	relationships, err := g.db.ListRelationships(nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch relationships: %w", err)
 	}

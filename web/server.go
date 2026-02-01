@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 	"github.com/harperreed/pagen/viz"
 )
 
@@ -20,12 +20,12 @@ import (
 var templatesFS embed.FS
 
 type Server struct {
-	client    *charm.Client
+	db        *repository.DB
 	templates *template.Template
 	generator *viz.GraphGenerator
 }
 
-func NewServer(client *charm.Client) (*Server, error) {
+func NewServer(db *repository.DB) (*Server, error) {
 	// Helper functions for templates
 	funcMap := template.FuncMap{
 		"divide": func(a, b int64) int64 {
@@ -51,9 +51,9 @@ func NewServer(client *charm.Client) (*Server, error) {
 	}
 
 	return &Server{
-		client:    client,
+		db:        db,
 		templates: tmpl,
-		generator: viz.NewGraphGenerator(client),
+		generator: viz.NewGraphGenerator(db),
 	}, nil
 }
 
@@ -79,7 +79,7 @@ func (s *Server) Start(port int) error {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	stats, err := viz.GenerateDashboardStats(s.client)
+	stats, err := viz.GenerateDashboardStats(s.db)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -107,7 +107,7 @@ func (s *Server) renderTemplate(w http.ResponseWriter, name string, data interfa
 
 func (s *Server) handleContacts(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
-	contacts, err := s.client.ListContacts(&charm.ContactFilter{
+	contacts, err := s.db.ListContacts(&repository.ContactFilter{
 		Query: query,
 		Limit: 100,
 	})
@@ -116,7 +116,7 @@ func (s *Server) handleContacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Contact views - charm.Contact already has CompanyName denormalized
+	// Contact views - repository.Contact already has CompanyName denormalized
 	type ContactView struct {
 		ID          string
 		Name        string
@@ -145,7 +145,7 @@ func (s *Server) handleContacts(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCompanies(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
-	companies, err := s.client.ListCompanies(&charm.CompanyFilter{
+	companies, err := s.db.ListCompanies(&repository.CompanyFilter{
 		Query: query,
 		Limit: 100,
 	})
@@ -167,8 +167,7 @@ func (s *Server) handleDeals(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	stage := r.URL.Query().Get("stage")
 
-	deals, err := s.client.ListDeals(&charm.DealFilter{
-		Query: query,
+	deals, err := s.db.ListDeals(&repository.DealFilter{
 		Stage: stage,
 		Limit: 100,
 	})
@@ -176,8 +175,9 @@ func (s *Server) handleDeals(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	_ = query // Query filter not currently used in DealFilter
 
-	// Deal views - charm.Deal already has CompanyName denormalized
+	// Deal views - repository.Deal already has CompanyName denormalized
 	type DealView struct {
 		ID          string
 		Title       string
@@ -216,7 +216,7 @@ func (s *Server) handleContactDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contact, err := s.client.GetContact(id)
+	contact, err := s.db.GetContact(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -238,13 +238,13 @@ func (s *Server) handleCompanyDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	company, err := s.client.GetCompany(id)
+	company, err := s.db.GetCompany(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	contacts, _ := s.client.ListContacts(&charm.ContactFilter{
+	contacts, _ := s.db.ListContacts(&repository.ContactFilter{
 		CompanyID: &id,
 		Limit:     100,
 	})
@@ -265,13 +265,13 @@ func (s *Server) handleDealDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deal, err := s.client.GetDeal(id)
+	deal, err := s.db.GetDeal(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	notes, _ := s.client.ListDealNotes(id)
+	notes, _ := s.db.ListDealNotes(id)
 
 	data := map[string]interface{}{
 		"Deal":        deal,
@@ -343,14 +343,14 @@ func (s *Server) handleGraphPartial(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFollowups(w http.ResponseWriter, r *http.Request) {
-	followups, err := s.client.GetFollowupList(50)
+	followups, err := s.db.GetFollowupList(50)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	data := struct {
-		Followups []*charm.FollowupContact
+		Followups []*repository.FollowupContact
 	}{
 		Followups: followups,
 	}
@@ -377,22 +377,22 @@ func (s *Server) handleFollowupLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get contact name for denormalization
-	contact, err := s.client.GetContact(id)
+	contact, err := s.db.GetContact(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	interaction := &charm.InteractionLog{
+	interaction := &repository.InteractionLog{
 		ID:              uuid.New(),
 		ContactID:       id,
 		ContactName:     contact.Name,
-		InteractionType: charm.InteractionMessage,
+		InteractionType: repository.InteractionMessage,
 		Timestamp:       time.Now(),
 		Notes:           "Quick contact via web UI",
 	}
 
-	err = s.client.CreateInteractionLog(interaction)
+	err = s.db.CreateInteractionLog(interaction)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

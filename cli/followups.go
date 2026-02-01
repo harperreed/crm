@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 )
 
 // FollowupListCommand lists contacts needing follow-up.
-func FollowupListCommand(client *charm.Client, args []string) error {
+func FollowupListCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	overdueOnly := fs.Bool("overdue-only", false, "Show only overdue contacts")
 	strength := fs.String("strength", "", "Filter by relationship strength (weak/medium/strong)")
@@ -27,7 +27,7 @@ func FollowupListCommand(client *charm.Client, args []string) error {
 	}
 
 	// Apply filters
-	var filtered []*charm.FollowupContact
+	var filtered []*repository.FollowupContact
 	for _, f := range followups {
 		if *overdueOnly && f.PriorityScore <= 0 {
 			continue
@@ -61,7 +61,7 @@ func FollowupListCommand(client *charm.Client, args []string) error {
 }
 
 // FollowupStatsCommand shows follow-up statistics.
-func FollowupStatsCommand(client *charm.Client, args []string) error {
+func FollowupStatsCommand(client *repository.DB, args []string) error {
 	cadences, err := client.ListContactCadences()
 	if err != nil {
 		return fmt.Errorf("failed to get cadences: %w", err)
@@ -91,13 +91,13 @@ func FollowupStatsCommand(client *charm.Client, args []string) error {
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Display stats for each strength level
-	for _, strength := range []string{charm.StrengthWeak, charm.StrengthMedium, charm.StrengthStrong} {
+	for _, strength := range []string{repository.StrengthWeak, repository.StrengthMedium, repository.StrengthStrong} {
 		if s, exists := stats[strength]; exists {
 			icon := "🟢"
 			switch strength {
-			case charm.StrengthWeak:
+			case repository.StrengthWeak:
 				icon = "🔴"
-			case charm.StrengthMedium:
+			case repository.StrengthMedium:
 				icon = "🟡"
 			}
 
@@ -110,7 +110,7 @@ func FollowupStatsCommand(client *charm.Client, args []string) error {
 }
 
 // LogInteractionCommand logs an interaction with a contact.
-func LogInteractionCommand(client *charm.Client, args []string) error {
+func LogInteractionCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("log", flag.ExitOnError)
 	contactIDStr := fs.String("contact", "", "Contact ID or name (required)")
 	interactionType := fs.String("type", "meeting", "Interaction type (meeting/call/email/message/event)")
@@ -129,7 +129,7 @@ func LogInteractionCommand(client *charm.Client, args []string) error {
 		contactID = parsedID
 	} else {
 		// Search by name
-		contacts, err := client.ListContacts(&charm.ContactFilter{Query: *contactIDStr, Limit: 10})
+		contacts, err := client.ListContacts(&repository.ContactFilter{Query: *contactIDStr, Limit: 10})
 		if err != nil {
 			return fmt.Errorf("failed to find contact: %w", err)
 		}
@@ -143,7 +143,7 @@ func LogInteractionCommand(client *charm.Client, args []string) error {
 	}
 
 	timestamp := time.Now()
-	interaction := &charm.InteractionLog{
+	interaction := &repository.InteractionLog{
 		ContactID:       contactID,
 		InteractionType: *interactionType,
 		Timestamp:       timestamp,
@@ -178,7 +178,7 @@ func LogInteractionCommand(client *charm.Client, args []string) error {
 }
 
 // SetCadenceCommand sets the follow-up cadence for a contact.
-func SetCadenceCommand(client *charm.Client, args []string) error {
+func SetCadenceCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("set-cadence", flag.ExitOnError)
 	contactIDStr := fs.String("contact", "", "Contact ID or name (required)")
 	days := fs.Int("days", 30, "Cadence in days")
@@ -195,7 +195,7 @@ func SetCadenceCommand(client *charm.Client, args []string) error {
 	if err == nil {
 		contactID = parsedID
 	} else {
-		contacts, err := client.ListContacts(&charm.ContactFilter{Query: *contactIDStr, Limit: 10})
+		contacts, err := client.ListContacts(&repository.ContactFilter{Query: *contactIDStr, Limit: 10})
 		if err != nil {
 			return fmt.Errorf("failed to find contact: %w", err)
 		}
@@ -212,7 +212,7 @@ func SetCadenceCommand(client *charm.Client, args []string) error {
 	}
 
 	if cadence == nil {
-		cadence = &charm.ContactCadence{
+		cadence = &repository.ContactCadence{
 			ContactID: contactID,
 		}
 	}
@@ -231,11 +231,11 @@ func SetCadenceCommand(client *charm.Client, args []string) error {
 			baseScore := float64(daysOverdue * 2)
 			multiplier := 1.0
 			switch cadence.RelationshipStrength {
-			case charm.StrengthStrong:
+			case repository.StrengthStrong:
 				multiplier = 2.0
-			case charm.StrengthMedium:
+			case repository.StrengthMedium:
 				multiplier = 1.5
-			case charm.StrengthWeak:
+			case repository.StrengthWeak:
 				multiplier = 1.0
 			}
 			cadence.PriorityScore = baseScore * multiplier
@@ -255,7 +255,7 @@ func SetCadenceCommand(client *charm.Client, args []string) error {
 }
 
 // DigestCommand generates a daily follow-up digest.
-func DigestCommand(client *charm.Client, args []string) error {
+func DigestCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("digest", flag.ExitOnError)
 	format := fs.String("format", "text", "Output format (text/json/html)")
 	_ = fs.Parse(args)
@@ -277,14 +277,14 @@ func DigestCommand(client *charm.Client, args []string) error {
 	return fmt.Errorf("unsupported format: %s", *format)
 }
 
-func printTextDigest(followups []*charm.FollowupContact) error {
+func printTextDigest(followups []*repository.FollowupContact) error {
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Printf("  FOLLOW-UPS FOR %s\n", time.Now().Format("2006-01-02"))
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println()
 
 	// Split into categories
-	var overdue, dueSoon []*charm.FollowupContact
+	var overdue, dueSoon []*repository.FollowupContact
 	for _, f := range followups {
 		if f.DaysSinceContact > f.CadenceDays+7 {
 			overdue = append(overdue, f)
@@ -312,7 +312,7 @@ func printTextDigest(followups []*charm.FollowupContact) error {
 	return nil
 }
 
-func printJSONDigest(followups []*charm.FollowupContact) error {
+func printJSONDigest(followups []*repository.FollowupContact) error {
 	// Simple JSON output for webhook integration
 	fmt.Printf("{\"date\":\"%s\",\"followups\":[", time.Now().Format("2006-01-02"))
 	for i, f := range followups {
@@ -326,7 +326,7 @@ func printJSONDigest(followups []*charm.FollowupContact) error {
 	return nil
 }
 
-func printHTMLDigest(followups []*charm.FollowupContact) error {
+func printHTMLDigest(followups []*repository.FollowupContact) error {
 	fmt.Println("<html><body>")
 	fmt.Printf("<h1>Follow-Ups for %s</h1>\n", time.Now().Format("2006-01-02"))
 	fmt.Println("<table border='1'>")

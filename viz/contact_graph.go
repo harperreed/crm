@@ -8,7 +8,7 @@ import (
 	"github.com/goccy/go-graphviz"
 	"github.com/goccy/go-graphviz/cgraph"
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 )
 
 func (g *GraphGenerator) GenerateContactGraph(contactID *uuid.UUID) (string, error) {
@@ -30,12 +30,12 @@ func (g *GraphGenerator) GenerateContactGraph(contactID *uuid.UUID) (string, err
 
 	// If contactID provided, show that contact's network
 	// Otherwise show all contacts and relationships
-	var relationships []*charm.Relationship
+	var relationships []*repository.Relationship
 	if contactID != nil {
-		relationships, err = g.client.ListRelationshipsForContact(*contactID)
+		relationships, err = g.db.ListRelationshipsForContact(*contactID)
 	} else {
 		// Get all relationships
-		relationships, err = g.client.ListRelationships(nil)
+		relationships, err = g.db.ListRelationships(nil)
 	}
 
 	if err != nil {

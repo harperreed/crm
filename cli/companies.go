@@ -9,11 +9,11 @@ import (
 	"text/tabwriter"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 )
 
 // AddCompanyCommand adds a new company.
-func AddCompanyCommand(client *charm.Client, args []string) error {
+func AddCompanyCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("add-company", flag.ExitOnError)
 	name := fs.String("name", "", "Company name (required)")
 	domain := fs.String("domain", "", "Company domain (e.g., acme.com)")
@@ -25,7 +25,7 @@ func AddCompanyCommand(client *charm.Client, args []string) error {
 		return fmt.Errorf("--name is required")
 	}
 
-	company := &charm.Company{
+	company := &repository.Company{
 		Name:     *name,
 		Domain:   *domain,
 		Industry: *industry,
@@ -48,13 +48,13 @@ func AddCompanyCommand(client *charm.Client, args []string) error {
 }
 
 // ListCompaniesCommand lists all companies.
-func ListCompaniesCommand(client *charm.Client, args []string) error {
+func ListCompaniesCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("list-companies", flag.ExitOnError)
 	query := fs.String("query", "", "Search by name or domain")
 	limit := fs.Int("limit", 50, "Maximum results")
 	_ = fs.Parse(args)
 
-	filter := &charm.CompanyFilter{
+	filter := &repository.CompanyFilter{
 		Query: *query,
 		Limit: *limit,
 	}
@@ -94,7 +94,7 @@ func ListCompaniesCommand(client *charm.Client, args []string) error {
 }
 
 // UpdateCompanyCommand updates an existing company.
-func UpdateCompanyCommand(client *charm.Client, args []string) error {
+func UpdateCompanyCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("update-company", flag.ExitOnError)
 	name := fs.String("name", "", "Company name")
 	domain := fs.String("domain", "", "Domain")
@@ -142,7 +142,7 @@ func UpdateCompanyCommand(client *charm.Client, args []string) error {
 }
 
 // DeleteCompanyCommand deletes a company.
-func DeleteCompanyCommand(client *charm.Client, args []string) error {
+func DeleteCompanyCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("delete-company", flag.ExitOnError)
 	_ = fs.Parse(args)
 

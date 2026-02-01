@@ -8,17 +8,17 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 	"github.com/harperreed/pagen/viz"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type VizHandlers struct {
-	client *charm.Client
+	db *repository.DB
 }
 
-func NewVizHandlers(client *charm.Client) *VizHandlers {
-	return &VizHandlers{client: client}
+func NewVizHandlers(db *repository.DB) *VizHandlers {
+	return &VizHandlers{db: db}
 }
 
 type GenerateGraphInput struct {
@@ -38,7 +38,7 @@ func (h *VizHandlers) GenerateGraph(_ context.Context, request *mcp.CallToolRequ
 		return nil, GenerateGraphOutput{}, fmt.Errorf("type is required")
 	}
 
-	generator := viz.NewGraphGenerator(h.client)
+	generator := viz.NewGraphGenerator(h.db)
 	var dot string
 	var err error
 

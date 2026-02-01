@@ -6,13 +6,13 @@ import (
 	"context"
 	"log"
 
-	"github.com/harperreed/pagen/charm"
 	"github.com/harperreed/pagen/handlers"
+	"github.com/harperreed/pagen/repository"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // MCPCommand starts the MCP server on stdio.
-func MCPCommand(client *charm.Client) error {
+func MCPCommand(client *repository.DB) error {
 	log.Println("Starting CRM MCP Server...")
 
 	// Create handlers

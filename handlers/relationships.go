@@ -7,16 +7,16 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type RelationshipHandlers struct {
-	client *charm.Client
+	db *repository.DB
 }
 
-func NewRelationshipHandlers(client *charm.Client) *RelationshipHandlers {
-	return &RelationshipHandlers{client: client}
+func NewRelationshipHandlers(db *repository.DB) *RelationshipHandlers {
+	return &RelationshipHandlers{db: db}
 }
 
 type LinkContactsInput struct {
@@ -56,17 +56,17 @@ func (h *RelationshipHandlers) LinkContacts(_ context.Context, request *mcp.Call
 	}
 
 	// Get contact names for denormalization
-	contact1, err := h.client.GetContact(contactID1)
+	contact1, err := h.db.GetContact(contactID1)
 	if err != nil {
 		return nil, RelationshipOutput{}, fmt.Errorf("failed to get contact 1: %w", err)
 	}
 
-	contact2, err := h.client.GetContact(contactID2)
+	contact2, err := h.db.GetContact(contactID2)
 	if err != nil {
 		return nil, RelationshipOutput{}, fmt.Errorf("failed to get contact 2: %w", err)
 	}
 
-	relationship := &charm.Relationship{
+	relationship := &repository.Relationship{
 		ContactID1:       contactID1,
 		ContactID2:       contactID2,
 		Contact1Name:     contact1.Name,
@@ -75,7 +75,7 @@ func (h *RelationshipHandlers) LinkContacts(_ context.Context, request *mcp.Call
 		Context:          input.Context,
 	}
 
-	if err := h.client.CreateRelationship(relationship); err != nil {
+	if err := h.db.CreateRelationship(relationship); err != nil {
 		return nil, RelationshipOutput{}, fmt.Errorf("failed to create relationship: %w", err)
 	}
 
@@ -116,7 +116,7 @@ func (h *RelationshipHandlers) FindContactRelationships(_ context.Context, reque
 		return nil, FindContactRelationshipsOutput{}, fmt.Errorf("invalid contact_id: %w", err)
 	}
 
-	relationships, err := h.client.ListRelationshipsForContact(contactID)
+	relationships, err := h.db.ListRelationshipsForContact(contactID)
 	if err != nil {
 		return nil, FindContactRelationshipsOutput{}, fmt.Errorf("failed to find relationships: %w", err)
 	}
@@ -124,7 +124,7 @@ func (h *RelationshipHandlers) FindContactRelationships(_ context.Context, reque
 	// Filter by relationship type if specified
 	filtered := relationships
 	if input.RelationshipType != "" {
-		filtered = make([]*charm.Relationship, 0)
+		filtered = make([]*repository.Relationship, 0)
 		for _, rel := range relationships {
 			if rel.RelationshipType == input.RelationshipType {
 				filtered = append(filtered, rel)
@@ -174,7 +174,7 @@ func (h *RelationshipHandlers) RemoveRelationship(_ context.Context, request *mc
 		return nil, RemoveRelationshipOutput{}, fmt.Errorf("invalid relationship_id: %w", err)
 	}
 
-	if err := h.client.DeleteRelationship(relationshipID); err != nil {
+	if err := h.db.DeleteRelationship(relationshipID); err != nil {
 		return nil, RemoveRelationshipOutput{}, fmt.Errorf("failed to delete relationship: %w", err)
 	}
 
@@ -206,7 +206,7 @@ func (h *RelationshipHandlers) UpdateRelationship(_ context.Context, request *mc
 	}
 
 	// Get existing relationship
-	rel, err := h.client.GetRelationship(relationshipID)
+	rel, err := h.db.GetRelationship(relationshipID)
 	if err != nil {
 		return nil, UpdateRelationshipOutput{}, fmt.Errorf("failed to get relationship: %w", err)
 	}
@@ -219,7 +219,7 @@ func (h *RelationshipHandlers) UpdateRelationship(_ context.Context, request *mc
 		rel.Context = input.Context
 	}
 
-	if err := h.client.UpdateRelationship(rel); err != nil {
+	if err := h.db.UpdateRelationship(rel); err != nil {
 		return nil, UpdateRelationshipOutput{}, fmt.Errorf("failed to update relationship: %w", err)
 	}
 
@@ -229,7 +229,7 @@ func (h *RelationshipHandlers) UpdateRelationship(_ context.Context, request *mc
 	}, nil
 }
 
-func relationshipToOutput(relationship *charm.Relationship) RelationshipOutput {
+func relationshipToOutput(relationship *repository.Relationship) RelationshipOutput {
 	return RelationshipOutput{
 		ID:               relationship.ID.String(),
 		ContactID1:       relationship.ContactID1.String(),
@@ -264,17 +264,17 @@ func (h *RelationshipHandlers) LinkContacts_Legacy(args map[string]interface{}) 
 	}
 
 	// Get contact names for denormalization
-	contact1, err := h.client.GetContact(contactID1)
+	contact1, err := h.db.GetContact(contactID1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get contact 1: %w", err)
 	}
 
-	contact2, err := h.client.GetContact(contactID2)
+	contact2, err := h.db.GetContact(contactID2)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get contact 2: %w", err)
 	}
 
-	relationship := &charm.Relationship{
+	relationship := &repository.Relationship{
 		ContactID1:   contactID1,
 		ContactID2:   contactID2,
 		Contact1Name: contact1.Name,
@@ -289,7 +289,7 @@ func (h *RelationshipHandlers) LinkContacts_Legacy(args map[string]interface{}) 
 		relationship.Context = context
 	}
 
-	if err := h.client.CreateRelationship(relationship); err != nil {
+	if err := h.db.CreateRelationship(relationship); err != nil {
 		return nil, fmt.Errorf("failed to create relationship: %w", err)
 	}
 
@@ -307,7 +307,7 @@ func (h *RelationshipHandlers) FindContactRelationships_Legacy(args map[string]i
 		return nil, fmt.Errorf("invalid contact_id: %w", err)
 	}
 
-	relationships, err := h.client.ListRelationshipsForContact(contactID)
+	relationships, err := h.db.ListRelationshipsForContact(contactID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find relationships: %w", err)
 	}
@@ -320,7 +320,7 @@ func (h *RelationshipHandlers) FindContactRelationships_Legacy(args map[string]i
 
 	filtered := relationships
 	if relationshipType != "" {
-		filtered = make([]*charm.Relationship, 0)
+		filtered = make([]*repository.Relationship, 0)
 		for _, rel := range relationships {
 			if rel.RelationshipType == relationshipType {
 				filtered = append(filtered, rel)
@@ -362,7 +362,7 @@ func (h *RelationshipHandlers) RemoveRelationship_Legacy(args map[string]interfa
 		return nil, fmt.Errorf("invalid relationship_id: %w", err)
 	}
 
-	if err := h.client.DeleteRelationship(relationshipID); err != nil {
+	if err := h.db.DeleteRelationship(relationshipID); err != nil {
 		return nil, fmt.Errorf("failed to delete relationship: %w", err)
 	}
 
@@ -372,7 +372,7 @@ func (h *RelationshipHandlers) RemoveRelationship_Legacy(args map[string]interfa
 	}, nil
 }
 
-func relationshipToMap(relationship *charm.Relationship) map[string]interface{} {
+func relationshipToMap(relationship *repository.Relationship) map[string]interface{} {
 	return map[string]interface{}{
 		"id":                relationship.ID.String(),
 		"contact_id_1":      relationship.ContactID1.String(),

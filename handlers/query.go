@@ -7,16 +7,16 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type QueryHandlers struct {
-	client *charm.Client
+	db *repository.DB
 }
 
-func NewQueryHandlers(client *charm.Client) *QueryHandlers {
-	return &QueryHandlers{client: client}
+func NewQueryHandlers(db *repository.DB) *QueryHandlers {
+	return &QueryHandlers{db: db}
 }
 
 type QueryCRMInput struct {
@@ -66,7 +66,7 @@ func (h *QueryHandlers) queryContacts(input QueryCRMInput) (*mcp.CallToolResult,
 	}
 
 	// Query contacts using charm client
-	contacts, err := h.client.ListContacts(&charm.ContactFilter{
+	contacts, err := h.db.ListContacts(&repository.ContactFilter{
 		Query:     input.Query,
 		CompanyID: companyID,
 		Limit:     input.Limit,
@@ -90,7 +90,7 @@ func (h *QueryHandlers) queryContacts(input QueryCRMInput) (*mcp.CallToolResult,
 
 func (h *QueryHandlers) queryCompanies(input QueryCRMInput) (*mcp.CallToolResult, QueryCRMOutput, error) {
 	// Query companies using charm client
-	companies, err := h.client.ListCompanies(&charm.CompanyFilter{
+	companies, err := h.db.ListCompanies(&repository.CompanyFilter{
 		Query: input.Query,
 		Limit: input.Limit,
 	})
@@ -113,7 +113,7 @@ func (h *QueryHandlers) queryCompanies(input QueryCRMInput) (*mcp.CallToolResult
 
 func (h *QueryHandlers) queryDeals(input QueryCRMInput) (*mcp.CallToolResult, QueryCRMOutput, error) {
 	// Build filter from input
-	filter := &charm.DealFilter{
+	filter := &repository.DealFilter{
 		Limit: input.Limit,
 	}
 
@@ -148,7 +148,7 @@ func (h *QueryHandlers) queryDeals(input QueryCRMInput) (*mcp.CallToolResult, Qu
 	}
 
 	// Query deals using charm client
-	deals, err := h.client.ListDeals(filter)
+	deals, err := h.db.ListDeals(filter)
 	if err != nil {
 		return nil, QueryCRMOutput{}, fmt.Errorf("failed to find deals: %w", err)
 	}
@@ -168,7 +168,7 @@ func (h *QueryHandlers) queryDeals(input QueryCRMInput) (*mcp.CallToolResult, Qu
 
 func (h *QueryHandlers) queryRelationships(input QueryCRMInput) (*mcp.CallToolResult, QueryCRMOutput, error) {
 	// Build filter from input
-	filter := &charm.RelationshipFilter{
+	filter := &repository.RelationshipFilter{
 		Limit: input.Limit,
 	}
 
@@ -194,7 +194,7 @@ func (h *QueryHandlers) queryRelationships(input QueryCRMInput) (*mcp.CallToolRe
 	}
 
 	// Query relationships using charm client
-	relationships, err := h.client.ListRelationships(filter)
+	relationships, err := h.db.ListRelationships(filter)
 	if err != nil {
 		return nil, QueryCRMOutput{}, fmt.Errorf("failed to find relationships: %w", err)
 	}

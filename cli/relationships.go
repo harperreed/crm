@@ -7,11 +7,11 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 )
 
 // UpdateRelationshipCommand updates a relationship.
-func UpdateRelationshipCommand(client *charm.Client, args []string) error {
+func UpdateRelationshipCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("update-relationship", flag.ExitOnError)
 	relType := fs.String("type", "", "Relationship type")
 	context := fs.String("context", "", "Relationship context")
@@ -48,7 +48,7 @@ func UpdateRelationshipCommand(client *charm.Client, args []string) error {
 }
 
 // DeleteRelationshipCommand deletes a relationship.
-func DeleteRelationshipCommand(client *charm.Client, args []string) error {
+func DeleteRelationshipCommand(client *repository.DB, args []string) error {
 	fs := flag.NewFlagSet("delete-relationship", flag.ExitOnError)
 	_ = fs.Parse(args)
 

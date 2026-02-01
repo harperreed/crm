@@ -8,7 +8,7 @@ import (
 	"github.com/goccy/go-graphviz"
 	"github.com/goccy/go-graphviz/cgraph"
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 )
 
 func (g *GraphGenerator) GenerateCompanyGraph(companyID uuid.UUID) (string, error) {
@@ -28,7 +28,7 @@ func (g *GraphGenerator) GenerateCompanyGraph(companyID uuid.UUID) (string, erro
 	graph.SetLayout("dot")
 
 	// Get company
-	company, err := g.client.GetCompany(companyID)
+	company, err := g.db.GetCompany(companyID)
 	if err != nil {
 		return "", fmt.Errorf("company not found: %w", err)
 	}
@@ -43,7 +43,7 @@ func (g *GraphGenerator) GenerateCompanyGraph(companyID uuid.UUID) (string, erro
 	rootNode.SetFillColor("lightblue")
 
 	// Get all contacts at company
-	contacts, err := g.client.ListContacts(&charm.ContactFilter{CompanyID: &companyID, Limit: 1000})
+	contacts, err := g.db.ListContacts(&repository.ContactFilter{CompanyID: &companyID, Limit: 1000})
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch contacts: %w", err)
 	}
@@ -62,7 +62,7 @@ func (g *GraphGenerator) GenerateCompanyGraph(companyID uuid.UUID) (string, erro
 
 	// Add relationships between contacts
 	for _, contact := range contacts {
-		relationships, _ := g.client.ListRelationshipsForContact(contact.ID)
+		relationships, _ := g.db.ListRelationshipsForContact(contact.ID)
 		for _, rel := range relationships {
 			otherID := rel.ContactID2
 			if rel.ContactID1 != contact.ID {

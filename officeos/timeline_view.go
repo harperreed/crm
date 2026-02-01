@@ -1,4 +1,4 @@
-// ABOUTME: TUI component for rendering activity timelines
+// ABOUTME: Component for rendering activity timelines as plain text
 // ABOUTME: Provides formatted timeline display with timestamps and filters
 package officeos
 
@@ -6,44 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/charmbracelet/lipgloss"
-)
-
-var (
-	// Timeline view styles.
-	timelineHeaderStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("170")).
-				MarginBottom(1)
-
-	activityItemStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("252")).
-				MarginLeft(2)
-
-	timestampStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Width(20)
-
-	actorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("214")).
-			Bold(true)
-
-	verbCreatedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("46")) // Green
-
-	verbUpdatedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("33")) // Blue
-
-	verbDeletedStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("196")) // Red
-
-	verbViewedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")) // Gray
-
-	metadataStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("244")).
-			MarginLeft(4)
 )
 
 // TimelineView handles rendering of activity timelines.
@@ -94,7 +56,9 @@ func (tv *TimelineView) RenderFiltered(filter TimelineFilter) string {
 func (tv *TimelineView) renderActivities(activities []*ActivityObject) string {
 	var s strings.Builder
 
-	s.WriteString(timelineHeaderStyle.Render("ACTIVITY TIMELINE"))
+	s.WriteString("ACTIVITY TIMELINE")
+	s.WriteString("\n")
+	s.WriteString(strings.Repeat("=", 17))
 	s.WriteString("\n\n")
 
 	for _, activity := range activities {
@@ -114,18 +78,18 @@ func (tv *TimelineView) renderActivity(activity *ActivityObject) string {
 
 	var s strings.Builder
 
-	// Timestamp
+	// Timestamp (padded to 20 chars)
 	timestamp := tv.formatTimestamp(activity.CreatedAt)
-	s.WriteString(timestampStyle.Render(timestamp))
+	s.WriteString(fmt.Sprintf("%-20s", timestamp))
 	s.WriteString("  ")
 
 	// Actor
-	s.WriteString(actorStyle.Render(fields.ActorID))
+	s.WriteString(fields.ActorID)
 	s.WriteString(" ")
 
-	// Verb with color coding
-	verbStyle := tv.getVerbStyle(fields.Verb)
-	s.WriteString(verbStyle.Render(string(fields.Verb)))
+	// Verb with indicator
+	verbIndicator := tv.getVerbIndicator(fields.Verb)
+	s.WriteString(fmt.Sprintf("[%s]", verbIndicator))
 	s.WriteString(" ")
 
 	// Object type
@@ -137,7 +101,7 @@ func (tv *TimelineView) renderActivity(activity *ActivityObject) string {
 		s.WriteString(tv.renderMetadata(fields.Metadata))
 	}
 
-	return activityItemStyle.Render(s.String())
+	return "  " + s.String()
 }
 
 // renderMetadata renders activity metadata.
@@ -146,8 +110,7 @@ func (tv *TimelineView) renderMetadata(metadata map[string]interface{}) string {
 
 	// Render changes if present
 	if changes, ok := metadata["changes"].(map[string]interface{}); ok {
-		s.WriteString(metadataStyle.Render("Changes:"))
-		s.WriteString("\n")
+		s.WriteString("    Changes:\n")
 
 		for field, change := range changes {
 			changeMap, ok := change.(map[string]interface{})
@@ -158,8 +121,8 @@ func (tv *TimelineView) renderMetadata(metadata map[string]interface{}) string {
 			before := changeMap["before"]
 			after := changeMap["after"]
 
-			changeStr := fmt.Sprintf("  %s: %v → %v", field, before, after)
-			s.WriteString(metadataStyle.Render(changeStr))
+			changeStr := fmt.Sprintf("      %s: %v -> %v", field, before, after)
+			s.WriteString(changeStr)
 			s.WriteString("\n")
 		}
 	}
@@ -170,8 +133,8 @@ func (tv *TimelineView) renderMetadata(metadata map[string]interface{}) string {
 			continue // Already handled
 		}
 
-		metaStr := fmt.Sprintf("%s: %v", key, value)
-		s.WriteString(metadataStyle.Render(metaStr))
+		metaStr := fmt.Sprintf("    %s: %v", key, value)
+		s.WriteString(metaStr)
 		s.WriteString("\n")
 	}
 
@@ -180,9 +143,7 @@ func (tv *TimelineView) renderMetadata(metadata map[string]interface{}) string {
 
 // renderEmpty renders an empty timeline message.
 func (tv *TimelineView) renderEmpty() string {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
-		Render("No activities to display")
+	return "No activities to display"
 }
 
 // formatTimestamp formats a timestamp for display.
@@ -207,19 +168,19 @@ func (tv *TimelineView) formatTimestamp(t time.Time) string {
 	}
 }
 
-// getVerbStyle returns the appropriate style for a verb.
-func (tv *TimelineView) getVerbStyle(verb ActivityVerb) lipgloss.Style {
+// getVerbIndicator returns a text indicator for a verb.
+func (tv *TimelineView) getVerbIndicator(verb ActivityVerb) string {
 	switch verb {
 	case VerbCreated:
-		return verbCreatedStyle
+		return "+"
 	case VerbUpdated:
-		return verbUpdatedStyle
+		return "~"
 	case VerbDeleted:
-		return verbDeletedStyle
+		return "-"
 	case VerbViewed:
-		return verbViewedStyle
+		return "."
 	default:
-		return lipgloss.NewStyle()
+		return "?"
 	}
 }
 

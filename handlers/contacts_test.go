@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 )
 
 func TestAddContactHandler(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewContactHandlers(client)
 
@@ -47,7 +47,7 @@ func TestAddContactHandler(t *testing.T) {
 }
 
 func TestAddContactWithCompanyName(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewContactHandlers(client)
 
@@ -80,7 +80,7 @@ func TestAddContactWithCompanyName(t *testing.T) {
 }
 
 func TestAddContactCreatesNewCompany(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewContactHandlers(client)
 
@@ -106,7 +106,7 @@ func TestAddContactCreatesNewCompany(t *testing.T) {
 	}
 
 	// Verify company was created by searching for it
-	companies, err := client.ListCompanies(&charm.CompanyFilter{
+	companies, err := client.ListCompanies(&repository.CompanyFilter{
 		Query: "New Corp",
 		Limit: 1,
 	})
@@ -119,7 +119,7 @@ func TestAddContactCreatesNewCompany(t *testing.T) {
 }
 
 func TestAddContactValidation(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewContactHandlers(client)
 
@@ -135,7 +135,7 @@ func TestAddContactValidation(t *testing.T) {
 }
 
 func TestFindContactsHandler(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewContactHandlers(client)
 
@@ -165,7 +165,7 @@ func TestFindContactsHandler(t *testing.T) {
 }
 
 func TestFindContactsByEmail(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewContactHandlers(client)
 
@@ -191,7 +191,7 @@ func TestFindContactsByEmail(t *testing.T) {
 }
 
 func TestFindContactsByCompanyID(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewContactHandlers(client)
 
@@ -226,7 +226,7 @@ func TestFindContactsByCompanyID(t *testing.T) {
 }
 
 func TestUpdateContactHandler(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewContactHandlers(client)
 
@@ -270,7 +270,7 @@ func TestUpdateContactHandler(t *testing.T) {
 }
 
 func TestUpdateContactNotFound(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewContactHandlers(client)
 
@@ -286,7 +286,7 @@ func TestUpdateContactNotFound(t *testing.T) {
 }
 
 func TestLogContactInteractionHandler(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewContactHandlers(client)
 
@@ -326,7 +326,7 @@ func TestLogContactInteractionHandler(t *testing.T) {
 }
 
 func TestLogContactInteractionWithCustomDate(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewContactHandlers(client)
 
@@ -372,7 +372,7 @@ func TestLogContactInteractionWithCustomDate(t *testing.T) {
 }
 
 func TestLogContactInteractionNotFound(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewContactHandlers(client)
 

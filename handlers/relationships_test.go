@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/pagen/charm"
+	"github.com/harperreed/pagen/repository"
 )
 
 func TestLinkContacts(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewRelationshipHandlers(client)
 	contactHandler := NewContactHandlers(client)
@@ -75,7 +75,7 @@ func TestLinkContacts(t *testing.T) {
 }
 
 func TestLinkContactsWithoutOptionalFields(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewRelationshipHandlers(client)
 	contactHandler := NewContactHandlers(client)
@@ -115,7 +115,7 @@ func TestLinkContactsWithoutOptionalFields(t *testing.T) {
 }
 
 func TestLinkContactsValidation(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewRelationshipHandlers(client)
 
@@ -163,7 +163,7 @@ func TestLinkContactsValidation(t *testing.T) {
 }
 
 func TestFindContactRelationships(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewRelationshipHandlers(client)
 	contactHandler := NewContactHandlers(client)
@@ -244,7 +244,7 @@ func TestFindContactRelationships(t *testing.T) {
 }
 
 func TestFindContactRelationshipsWithTypeFilter(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewRelationshipHandlers(client)
 	contactHandler := NewContactHandlers(client)
@@ -307,7 +307,7 @@ func TestFindContactRelationshipsWithTypeFilter(t *testing.T) {
 }
 
 func TestFindContactRelationshipsBidirectional(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewRelationshipHandlers(client)
 	contactHandler := NewContactHandlers(client)
@@ -373,7 +373,7 @@ func TestFindContactRelationshipsBidirectional(t *testing.T) {
 }
 
 func TestRemoveRelationship(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewRelationshipHandlers(client)
 	contactHandler := NewContactHandlers(client)
@@ -432,7 +432,7 @@ func TestRemoveRelationship(t *testing.T) {
 }
 
 func TestRemoveRelationshipValidation(t *testing.T) {
-	client := charm.NewTestClient(t)
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
 
 	handler := NewRelationshipHandlers(client)
 
