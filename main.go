@@ -351,7 +351,14 @@ func main() {
 
 	case "install-skill":
 		// Install Claude Code skill
-		if err := cli.InstallSkillCommand(); err != nil {
+		skipConfirm := false
+		for _, arg := range os.Args[2:] {
+			if arg == "-y" || arg == "--yes" {
+				skipConfirm = true
+				break
+			}
+		}
+		if err := cli.InstallSkillCommand(skipConfirm); err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 

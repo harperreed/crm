@@ -701,3 +701,531 @@ func TestExportAll(t *testing.T) {
 	assert.Len(t, data.Companies, 1)
 	assert.Len(t, data.Deals, 1)
 }
+
+func TestExportToJSON(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create data
+	company := &Company{Name: "Acme Corp"}
+	err := db.CreateCompany(company)
+	require.NoError(t, err)
+
+	jsonData, err := db.ExportToJSON()
+	require.NoError(t, err)
+	assert.Contains(t, string(jsonData), "Acme Corp")
+	assert.Contains(t, string(jsonData), "pagen")
+}
+
+func TestConfig(t *testing.T) {
+	db := setupTestDB(t)
+
+	config := db.Config()
+	require.NotNil(t, config)
+	assert.Equal(t, "sqlite://local", config.Host)
+}
+
+// ============================================================================
+// Additional Contact Tests
+// ============================================================================
+
+func TestUpdateNonexistentContact(t *testing.T) {
+	db := setupTestDB(t)
+
+	contact := &Contact{
+		ID:   uuid.New(),
+		Name: "Nonexistent",
+	}
+
+	err := db.UpdateContact(contact)
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestDeleteNonexistentContact(t *testing.T) {
+	db := setupTestDB(t)
+
+	err := db.DeleteContact(uuid.New())
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestGetNonexistentContact(t *testing.T) {
+	db := setupTestDB(t)
+
+	_, err := db.GetContact(uuid.New())
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestContactWithLastContactedAt(t *testing.T) {
+	db := setupTestDB(t)
+
+	now := time.Now()
+	contact := &Contact{
+		Name:            "John Doe",
+		LastContactedAt: &now,
+	}
+
+	err := db.CreateContact(contact)
+	require.NoError(t, err)
+
+	fetched, err := db.GetContact(contact.ID)
+	require.NoError(t, err)
+	require.NotNil(t, fetched.LastContactedAt)
+}
+
+// ============================================================================
+// Additional Company Tests
+// ============================================================================
+
+func TestUpdateNonexistentCompany(t *testing.T) {
+	db := setupTestDB(t)
+
+	company := &Company{
+		ID:   uuid.New(),
+		Name: "Nonexistent",
+	}
+
+	err := db.UpdateCompany(company)
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestDeleteNonexistentCompany(t *testing.T) {
+	db := setupTestDB(t)
+
+	err := db.DeleteCompany(uuid.New())
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestListCompaniesWithQuery(t *testing.T) {
+	db := setupTestDB(t)
+
+	_ = db.CreateCompany(&Company{Name: "Acme Corp", Domain: "acme.com"})
+	_ = db.CreateCompany(&Company{Name: "Beta Inc", Domain: "beta.io"})
+
+	companies, err := db.ListCompanies(&CompanyFilter{Query: "acme"})
+	require.NoError(t, err)
+	assert.Len(t, companies, 1)
+	assert.Equal(t, "Acme Corp", companies[0].Name)
+}
+
+// ============================================================================
+// Additional Deal Tests
+// ============================================================================
+
+func TestUpdateNonexistentDeal(t *testing.T) {
+	db := setupTestDB(t)
+
+	company := &Company{Name: "Test"}
+	_ = db.CreateCompany(company)
+
+	deal := &Deal{
+		ID:        uuid.New(),
+		Title:     "Nonexistent",
+		CompanyID: company.ID,
+		Stage:     StageProspecting,
+	}
+
+	err := db.UpdateDeal(deal)
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestDeleteNonexistentDeal(t *testing.T) {
+	db := setupTestDB(t)
+
+	err := db.DeleteDeal(uuid.New())
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestDealWithContact(t *testing.T) {
+	db := setupTestDB(t)
+
+	company := &Company{Name: "Test Corp"}
+	_ = db.CreateCompany(company)
+
+	contact := &Contact{Name: "John Doe", CompanyID: &company.ID}
+	_ = db.CreateContact(contact)
+
+	closeDate := time.Now().AddDate(0, 1, 0)
+	deal := &Deal{
+		Title:             "Big Deal",
+		CompanyID:         company.ID,
+		ContactID:         &contact.ID,
+		ContactName:       contact.Name,
+		Stage:             StageProspecting,
+		ExpectedCloseDate: &closeDate,
+	}
+
+	err := db.CreateDeal(deal)
+	require.NoError(t, err)
+
+	fetched, err := db.GetDeal(deal.ID)
+	require.NoError(t, err)
+	require.NotNil(t, fetched.ContactID)
+	assert.Equal(t, contact.ID, *fetched.ContactID)
+	require.NotNil(t, fetched.ExpectedCloseDate)
+}
+
+func TestListDealsWithFilters(t *testing.T) {
+	db := setupTestDB(t)
+
+	company := &Company{Name: "Test Corp"}
+	_ = db.CreateCompany(company)
+
+	contact := &Contact{Name: "John"}
+	_ = db.CreateContact(contact)
+
+	_ = db.CreateDeal(&Deal{Title: "Deal A", CompanyID: company.ID, ContactID: &contact.ID, Stage: StageProspecting, Amount: 10000})
+	_ = db.CreateDeal(&Deal{Title: "Deal B", CompanyID: company.ID, Stage: StageNegotiation, Amount: 50000})
+	_ = db.CreateDeal(&Deal{Title: "Deal C", CompanyID: company.ID, Stage: StageProspecting, Amount: 100000})
+
+	// Filter by contact
+	deals, err := db.ListDeals(&DealFilter{ContactID: &contact.ID})
+	require.NoError(t, err)
+	assert.Len(t, deals, 1)
+
+	// Filter by max amount
+	deals, err = db.ListDeals(&DealFilter{MaxAmount: 50000})
+	require.NoError(t, err)
+	assert.Len(t, deals, 2)
+
+	// Filter by query
+	deals, err = db.ListDeals(&DealFilter{Query: "Deal A"})
+	require.NoError(t, err)
+	assert.Len(t, deals, 1)
+}
+
+// ============================================================================
+// Additional DealNote Tests
+// ============================================================================
+
+func TestDeleteNonexistentDealNote(t *testing.T) {
+	db := setupTestDB(t)
+
+	err := db.DeleteDealNote(uuid.New())
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestGetNonexistentDealNote(t *testing.T) {
+	db := setupTestDB(t)
+
+	_, err := db.GetDealNote(uuid.New())
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+// ============================================================================
+// Additional Relationship Tests
+// ============================================================================
+
+func TestUpdateNonexistentRelationship(t *testing.T) {
+	db := setupTestDB(t)
+
+	rel := &Relationship{
+		ID:         uuid.New(),
+		ContactID1: uuid.New(),
+		ContactID2: uuid.New(),
+	}
+
+	err := db.UpdateRelationship(rel)
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestDeleteNonexistentRelationship(t *testing.T) {
+	db := setupTestDB(t)
+
+	err := db.DeleteRelationship(uuid.New())
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestListRelationshipsWithFilter(t *testing.T) {
+	db := setupTestDB(t)
+
+	contact1 := &Contact{Name: "Alice"}
+	contact2 := &Contact{Name: "Bob"}
+	contact3 := &Contact{Name: "Charlie"}
+	_ = db.CreateContact(contact1)
+	_ = db.CreateContact(contact2)
+	_ = db.CreateContact(contact3)
+
+	_ = db.CreateRelationship(&Relationship{
+		ContactID1:       contact1.ID,
+		ContactID2:       contact2.ID,
+		RelationshipType: "colleague",
+	})
+	_ = db.CreateRelationship(&Relationship{
+		ContactID1:       contact1.ID,
+		ContactID2:       contact3.ID,
+		RelationshipType: "friend",
+	})
+
+	// Filter by contact
+	rels, err := db.ListRelationships(&RelationshipFilter{ContactID: &contact1.ID})
+	require.NoError(t, err)
+	assert.Len(t, rels, 2)
+
+	// Filter by type
+	rels, err = db.ListRelationships(&RelationshipFilter{RelationshipType: "colleague"})
+	require.NoError(t, err)
+	assert.Len(t, rels, 1)
+
+	// Filter with limit
+	rels, err = db.ListRelationships(&RelationshipFilter{Limit: 1})
+	require.NoError(t, err)
+	assert.Len(t, rels, 1)
+}
+
+func TestGetRelationshipBetweenNotFound(t *testing.T) {
+	db := setupTestDB(t)
+
+	rel, err := db.GetRelationshipBetween(uuid.New(), uuid.New())
+	require.NoError(t, err)
+	assert.Nil(t, rel)
+}
+
+// ============================================================================
+// Additional InteractionLog Tests
+// ============================================================================
+
+func TestDeleteNonexistentInteractionLog(t *testing.T) {
+	db := setupTestDB(t)
+
+	err := db.DeleteInteractionLog(uuid.New())
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestGetNonexistentInteractionLog(t *testing.T) {
+	db := setupTestDB(t)
+
+	_, err := db.GetInteractionLog(uuid.New())
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestInteractionLogWithSentiment(t *testing.T) {
+	db := setupTestDB(t)
+
+	contact := &Contact{Name: "John"}
+	_ = db.CreateContact(contact)
+
+	sentiment := "positive"
+	log := &InteractionLog{
+		ContactID:       contact.ID,
+		InteractionType: InteractionMeeting,
+		Notes:           "Great meeting",
+		Sentiment:       &sentiment,
+	}
+
+	err := db.CreateInteractionLog(log)
+	require.NoError(t, err)
+
+	fetched, err := db.GetInteractionLog(log.ID)
+	require.NoError(t, err)
+	require.NotNil(t, fetched.Sentiment)
+	assert.Equal(t, "positive", *fetched.Sentiment)
+}
+
+func TestListInteractionLogsWithFilters(t *testing.T) {
+	db := setupTestDB(t)
+
+	contact := &Contact{Name: "John"}
+	_ = db.CreateContact(contact)
+
+	sentiment := SentimentPositive
+	now := time.Now()
+	yesterday := now.AddDate(0, 0, -1)
+
+	_ = db.CreateInteractionLog(&InteractionLog{
+		ContactID:       contact.ID,
+		InteractionType: InteractionMeeting,
+		Timestamp:       now,
+	})
+	_ = db.CreateInteractionLog(&InteractionLog{
+		ContactID:       contact.ID,
+		InteractionType: InteractionEmail,
+		Timestamp:       yesterday,
+		Sentiment:       &sentiment,
+	})
+
+	// Filter by type
+	logs, err := db.ListInteractionLogs(&InteractionFilter{InteractionType: InteractionMeeting})
+	require.NoError(t, err)
+	assert.Len(t, logs, 1)
+
+	// Filter by since
+	logs, err = db.ListInteractionLogs(&InteractionFilter{Since: &now})
+	require.NoError(t, err)
+	assert.Len(t, logs, 1)
+
+	// Filter by sentiment
+	logs, err = db.ListInteractionLogs(&InteractionFilter{Sentiment: SentimentPositive})
+	require.NoError(t, err)
+	assert.Len(t, logs, 1)
+}
+
+// ============================================================================
+// Additional Suggestion Tests
+// ============================================================================
+
+func TestDeleteNonexistentSuggestion(t *testing.T) {
+	db := setupTestDB(t)
+
+	err := db.DeleteSuggestion(uuid.New())
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestUpdateNonexistentSuggestion(t *testing.T) {
+	db := setupTestDB(t)
+
+	suggestion := &Suggestion{
+		ID:            uuid.New(),
+		Type:          SuggestionTypeDeal,
+		SourceService: "test",
+		Status:        SuggestionStatusPending,
+	}
+
+	err := db.UpdateSuggestion(suggestion)
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestListSuggestionsWithFilters(t *testing.T) {
+	db := setupTestDB(t)
+
+	_ = db.CreateSuggestion(&Suggestion{Type: SuggestionTypeDeal, Confidence: 0.9, SourceService: "gmail", Status: SuggestionStatusPending})
+	_ = db.CreateSuggestion(&Suggestion{Type: SuggestionTypeCompany, Confidence: 0.5, SourceService: "gmail", Status: SuggestionStatusAccepted})
+
+	// Filter by type
+	suggestions, err := db.ListSuggestions(&SuggestionFilter{Type: SuggestionTypeDeal})
+	require.NoError(t, err)
+	assert.Len(t, suggestions, 1)
+
+	// Filter by min confidence
+	suggestions, err = db.ListSuggestions(&SuggestionFilter{MinConfidence: 0.8})
+	require.NoError(t, err)
+	assert.Len(t, suggestions, 1)
+
+	// Filter with limit
+	suggestions, err = db.ListSuggestions(&SuggestionFilter{Limit: 1})
+	require.NoError(t, err)
+	assert.Len(t, suggestions, 1)
+}
+
+// ============================================================================
+// Additional ContactCadence Tests
+// ============================================================================
+
+func TestUpdateCadenceAfterInteraction(t *testing.T) {
+	db := setupTestDB(t)
+
+	contact := &Contact{Name: "John"}
+	_ = db.CreateContact(contact)
+
+	// Create initial cadence
+	_ = db.SaveContactCadence(&ContactCadence{
+		ContactID:            contact.ID,
+		CadenceDays:          14,
+		RelationshipStrength: StrengthStrong,
+	})
+
+	// Update after interaction
+	err := db.UpdateCadenceAfterInteraction(contact.ID, time.Now())
+	require.NoError(t, err)
+
+	// Verify
+	cadence, err := db.GetContactCadence(contact.ID)
+	require.NoError(t, err)
+	require.NotNil(t, cadence)
+	require.NotNil(t, cadence.LastInteractionDate)
+	require.NotNil(t, cadence.NextFollowupDate)
+}
+
+func TestUpdateCadenceAfterInteractionCreatesNew(t *testing.T) {
+	db := setupTestDB(t)
+
+	contact := &Contact{Name: "John"}
+	_ = db.CreateContact(contact)
+
+	// Update without existing cadence should create one
+	err := db.UpdateCadenceAfterInteraction(contact.ID, time.Now())
+	require.NoError(t, err)
+
+	cadence, err := db.GetContactCadence(contact.ID)
+	require.NoError(t, err)
+	require.NotNil(t, cadence)
+	assert.Equal(t, 30, cadence.CadenceDays)                      // Default
+	assert.Equal(t, StrengthMedium, cadence.RelationshipStrength) // Default
+}
+
+// ============================================================================
+// SyncState Non-existent Tests
+// ============================================================================
+
+func TestGetNonexistentSyncState(t *testing.T) {
+	db := setupTestDB(t)
+
+	state, err := db.GetSyncState("nonexistent-service")
+	require.NoError(t, err)
+	assert.Nil(t, state)
+}
+
+// ============================================================================
+// SyncLog Non-existent Tests
+// ============================================================================
+
+func TestFindNonexistentSyncLog(t *testing.T) {
+	db := setupTestDB(t)
+
+	log, err := db.FindSyncLogBySource("nonexistent", "nonexistent")
+	require.NoError(t, err)
+	assert.Nil(t, log)
+}
+
+// ============================================================================
+// GetAllHelpers Tests
+// ============================================================================
+
+func TestGetAllContacts(t *testing.T) {
+	db := setupTestDB(t)
+
+	_ = db.CreateContact(&Contact{Name: "Alice"})
+	_ = db.CreateContact(&Contact{Name: "Bob"})
+
+	contacts, err := db.GetAllContacts()
+	require.NoError(t, err)
+	assert.Len(t, contacts, 2)
+}
+
+func TestGetAllCompanies(t *testing.T) {
+	db := setupTestDB(t)
+
+	_ = db.CreateCompany(&Company{Name: "Acme"})
+	_ = db.CreateCompany(&Company{Name: "Beta"})
+
+	companies, err := db.GetAllCompanies()
+	require.NoError(t, err)
+	assert.Len(t, companies, 2)
+}
+
+func TestGetAllDeals(t *testing.T) {
+	db := setupTestDB(t)
+
+	company := &Company{Name: "Acme"}
+	_ = db.CreateCompany(company)
+
+	_ = db.CreateDeal(&Deal{Title: "Deal 1", CompanyID: company.ID, Stage: StageProspecting})
+	_ = db.CreateDeal(&Deal{Title: "Deal 2", CompanyID: company.ID, Stage: StageProspecting})
+
+	deals, err := db.GetAllDeals()
+	require.NoError(t, err)
+	assert.Len(t, deals, 2)
+}
+
+func TestGetAllRelationships(t *testing.T) {
+	db := setupTestDB(t)
+
+	c1 := &Contact{Name: "Alice"}
+	c2 := &Contact{Name: "Bob"}
+	_ = db.CreateContact(c1)
+	_ = db.CreateContact(c2)
+
+	_ = db.CreateRelationship(&Relationship{ContactID1: c1.ID, ContactID2: c2.ID})
+
+	rels, err := db.GetAllRelationships()
+	require.NoError(t, err)
+	assert.Len(t, rels, 1)
+}

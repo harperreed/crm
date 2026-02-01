@@ -300,3 +300,172 @@ func TestFindDeals(t *testing.T) {
 		t.Errorf("Expected at least 3 deals total, got %d", len(allDeals))
 	}
 }
+
+func TestDeleteDeal(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	// Create company
+	company := &models.Company{Name: "Delete Deal Corp"}
+	if err := CreateCompany(db, company); err != nil {
+		t.Fatalf("CreateCompany failed: %v", err)
+	}
+
+	// Create deal
+	deal := &models.Deal{
+		Title:     "Deal to Delete",
+		Stage:     models.StageProspecting,
+		CompanyID: company.ID,
+		Currency:  "USD",
+	}
+	if err := CreateDeal(db, deal); err != nil {
+		t.Fatalf("CreateDeal failed: %v", err)
+	}
+
+	// Verify deal exists
+	found, err := GetDeal(db, deal.ID)
+	if err != nil {
+		t.Fatalf("GetDeal failed: %v", err)
+	}
+	if found == nil {
+		t.Fatal("Deal should exist before deletion")
+	}
+
+	// Delete deal
+	if err := DeleteDeal(db, deal.ID); err != nil {
+		t.Fatalf("DeleteDeal failed: %v", err)
+	}
+
+	// Verify deal is deleted
+	found, err = GetDeal(db, deal.ID)
+	if err != nil {
+		t.Fatalf("GetDeal after delete failed: %v", err)
+	}
+	if found != nil {
+		t.Error("Deal should be deleted")
+	}
+
+	// Test deleting non-existent deal
+	err = DeleteDeal(db, uuid.New())
+	if err == nil {
+		t.Error("Expected error when deleting non-existent deal")
+	}
+}
+
+func TestGetDealNonexistent(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	// Try to get non-existent deal
+	found, err := GetDeal(db, uuid.New())
+	if err != nil {
+		t.Fatalf("GetDeal should not error for non-existent ID: %v", err)
+	}
+	if found != nil {
+		t.Error("Expected nil for non-existent deal")
+	}
+}
+
+func TestFindDealsDefaultLimit(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	// Create company
+	company := &models.Company{Name: "Many Deals Corp"}
+	if err := CreateCompany(db, company); err != nil {
+		t.Fatalf("CreateCompany failed: %v", err)
+	}
+
+	// Create multiple deals
+	for i := 0; i < 5; i++ {
+		deal := &models.Deal{
+			Title:     "Deal",
+			Stage:     models.StageProspecting,
+			CompanyID: company.ID,
+			Currency:  "USD",
+		}
+		if err := CreateDeal(db, deal); err != nil {
+			t.Fatalf("CreateDeal failed: %v", err)
+		}
+	}
+
+	// Test zero limit defaults to 10
+	deals, err := FindDeals(db, "", nil, 0)
+	if err != nil {
+		t.Fatalf("FindDeals with zero limit failed: %v", err)
+	}
+	if len(deals) != 5 {
+		t.Errorf("Expected 5 deals with default limit, got %d", len(deals))
+	}
+
+	// Test negative limit defaults to 10
+	deals, err = FindDeals(db, "", nil, -1)
+	if err != nil {
+		t.Fatalf("FindDeals with negative limit failed: %v", err)
+	}
+	if len(deals) != 5 {
+		t.Errorf("Expected 5 deals with negative limit, got %d", len(deals))
+	}
+}
+
+func TestGetDealNotesOrdering(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	// Create company
+	company := &models.Company{Name: "Notes Corp"}
+	if err := CreateCompany(db, company); err != nil {
+		t.Fatalf("CreateCompany failed: %v", err)
+	}
+
+	// Create deal
+	deal := &models.Deal{
+		Title:     "Deal with Notes",
+		Stage:     models.StageProspecting,
+		CompanyID: company.ID,
+		Currency:  "USD",
+	}
+	if err := CreateDeal(db, deal); err != nil {
+		t.Fatalf("CreateDeal failed: %v", err)
+	}
+
+	// Add multiple notes
+	for i := 0; i < 3; i++ {
+		note := &models.DealNote{
+			DealID:  deal.ID,
+			Content: "Note " + string(rune('A'+i)),
+		}
+		if err := AddDealNote(db, note); err != nil {
+			t.Fatalf("AddDealNote failed: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Get notes - should be newest first
+	notes, err := GetDealNotes(db, deal.ID)
+	if err != nil {
+		t.Fatalf("GetDealNotes failed: %v", err)
+	}
+	if len(notes) != 3 {
+		t.Fatalf("Expected 3 notes, got %d", len(notes))
+	}
+
+	// Notes should be in descending order (newest first)
+	if notes[0].Content != "Note C" {
+		t.Errorf("Expected first note 'Note C' (newest), got '%s'", notes[0].Content)
+	}
+	if notes[2].Content != "Note A" {
+		t.Errorf("Expected last note 'Note A' (oldest), got '%s'", notes[2].Content)
+	}
+}
+
+func TestGetDealNotesNonexistentDeal(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	// Try to get notes for non-existent deal
+	_, err := GetDealNotes(db, uuid.New())
+	if err == nil {
+		t.Error("Expected error when getting notes for non-existent deal")
+	}
+}

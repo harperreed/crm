@@ -471,3 +471,257 @@ func TestAddDealNoteNotFound(t *testing.T) {
 		t.Error("Expected error for non-existent deal")
 	}
 }
+
+// Tests for typed handlers (non-legacy).
+func TestCreateDealTyped(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewDealHandlers(client)
+
+	input := CreateDealInput{
+		Title:       "Typed Deal",
+		Amount:      50000,
+		Currency:    "EUR",
+		Stage:       "prospecting",
+		CompanyName: "Typed Corp",
+	}
+
+	_, output, err := handler.CreateDeal(nil, nil, input)
+	if err != nil {
+		t.Fatalf("CreateDeal failed: %v", err)
+	}
+
+	if output.Title != "Typed Deal" {
+		t.Errorf("Expected title 'Typed Deal', got %v", output.Title)
+	}
+	if output.Amount != 50000 {
+		t.Errorf("Expected amount 50000, got %v", output.Amount)
+	}
+	if output.Currency != "EUR" {
+		t.Errorf("Expected currency 'EUR', got %v", output.Currency)
+	}
+}
+
+func TestCreateDealTypedValidation(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewDealHandlers(client)
+
+	// Missing title
+	_, _, err := handler.CreateDeal(nil, nil, CreateDealInput{
+		CompanyName: "Test Corp",
+	})
+	if err == nil {
+		t.Error("Expected error for missing title")
+	}
+
+	// Missing company_name
+	_, _, err = handler.CreateDeal(nil, nil, CreateDealInput{
+		Title: "Test Deal",
+	})
+	if err == nil {
+		t.Error("Expected error for missing company_name")
+	}
+}
+
+func TestCreateDealTypedInvalidStage(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewDealHandlers(client)
+
+	input := CreateDealInput{
+		Title:       "Invalid Stage Deal",
+		CompanyName: "Test Corp",
+		Stage:       "invalid_stage",
+	}
+
+	_, _, err := handler.CreateDeal(nil, nil, input)
+	if err == nil {
+		t.Error("Expected error for invalid stage")
+	}
+}
+
+func TestCreateDealTypedDefaults(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewDealHandlers(client)
+
+	input := CreateDealInput{
+		Title:       "Default Deal",
+		CompanyName: "Default Corp",
+	}
+
+	_, output, err := handler.CreateDeal(nil, nil, input)
+	if err != nil {
+		t.Fatalf("CreateDeal failed: %v", err)
+	}
+
+	if output.Currency != "USD" {
+		t.Errorf("Expected default currency 'USD', got %v", output.Currency)
+	}
+	if output.Stage != "prospecting" {
+		t.Errorf("Expected default stage 'prospecting', got %v", output.Stage)
+	}
+}
+
+func TestUpdateDealTyped(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewDealHandlers(client)
+
+	// Create deal first
+	_, created, _ := handler.CreateDeal(nil, nil, CreateDealInput{
+		Title:       "Original Typed Deal",
+		CompanyName: "Test Corp",
+	})
+
+	// Update deal
+	amount := int64(25000)
+	input := UpdateDealInput{
+		ID:     created.ID,
+		Amount: &amount,
+		Stage:  "negotiation",
+	}
+
+	_, output, err := handler.UpdateDeal(nil, nil, input)
+	if err != nil {
+		t.Fatalf("UpdateDeal failed: %v", err)
+	}
+
+	if output.Amount != 25000 {
+		t.Errorf("Expected amount 25000, got %v", output.Amount)
+	}
+	if output.Stage != "negotiation" {
+		t.Errorf("Expected stage 'negotiation', got %v", output.Stage)
+	}
+}
+
+func TestUpdateDealTypedValidation(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewDealHandlers(client)
+
+	// Missing ID
+	amount := int64(1000)
+	_, _, err := handler.UpdateDeal(nil, nil, UpdateDealInput{
+		Amount: &amount,
+	})
+	if err == nil {
+		t.Error("Expected error for missing ID")
+	}
+}
+
+func TestUpdateDealTypedInvalidID(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewDealHandlers(client)
+
+	amount := int64(1000)
+	_, _, err := handler.UpdateDeal(nil, nil, UpdateDealInput{
+		ID:     "invalid-uuid",
+		Amount: &amount,
+	})
+	if err == nil {
+		t.Error("Expected error for invalid ID")
+	}
+}
+
+func TestAddDealNoteTyped(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewDealHandlers(client)
+
+	// Create deal first
+	_, created, _ := handler.CreateDeal(nil, nil, CreateDealInput{
+		Title:       "Note Deal Typed",
+		CompanyName: "Test Corp",
+	})
+
+	// Add note
+	input := AddDealNoteInput{
+		DealID:  created.ID,
+		Content: "Typed note content",
+	}
+
+	_, output, err := handler.AddDealNote(nil, nil, input)
+	if err != nil {
+		t.Fatalf("AddDealNote failed: %v", err)
+	}
+
+	if output.Content != "Typed note content" {
+		t.Errorf("Expected content 'Typed note content', got %v", output.Content)
+	}
+}
+
+func TestAddDealNoteTypedValidation(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewDealHandlers(client)
+
+	// Missing deal_id
+	_, _, err := handler.AddDealNote(nil, nil, AddDealNoteInput{
+		Content: "Test",
+	})
+	if err == nil {
+		t.Error("Expected error for missing deal_id")
+	}
+
+	// Missing content
+	_, _, err = handler.AddDealNote(nil, nil, AddDealNoteInput{
+		DealID: uuid.New().String(),
+	})
+	if err == nil {
+		t.Error("Expected error for missing content")
+	}
+}
+
+func TestDeleteDealTyped(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewDealHandlers(client)
+
+	// Create deal first
+	_, created, _ := handler.CreateDeal(nil, nil, CreateDealInput{
+		Title:       "To Delete Deal",
+		CompanyName: "Test Corp",
+	})
+
+	// Delete deal
+	input := DeleteDealInput{
+		ID: created.ID,
+	}
+
+	_, output, err := handler.DeleteDeal(nil, nil, input)
+	if err != nil {
+		t.Fatalf("DeleteDeal failed: %v", err)
+	}
+
+	if !output.Success {
+		t.Error("Expected success true")
+	}
+}
+
+func TestDeleteDealTypedValidation(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewDealHandlers(client)
+
+	// Missing ID
+	_, _, err := handler.DeleteDeal(nil, nil, DeleteDealInput{})
+	if err == nil {
+		t.Error("Expected error for missing ID")
+	}
+}
+
+func TestDeleteDealTypedInvalidID(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewDealHandlers(client)
+
+	_, _, err := handler.DeleteDeal(nil, nil, DeleteDealInput{
+		ID: "invalid-uuid",
+	})
+	if err == nil {
+		t.Error("Expected error for invalid ID")
+	}
+}

@@ -454,3 +454,225 @@ func TestRemoveRelationshipValidation(t *testing.T) {
 		t.Error("Expected validation error for invalid relationship_id")
 	}
 }
+
+// Tests for typed handlers (non-legacy).
+func TestLinkContactsTyped(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewRelationshipHandlers(client)
+	contactHandler := NewContactHandlers(client)
+
+	// Create two contacts
+	_, c1, _ := contactHandler.AddContact(nil, nil, AddContactInput{Name: "Typed Alice"})
+	_, c2, _ := contactHandler.AddContact(nil, nil, AddContactInput{Name: "Typed Bob"})
+
+	// Link contacts
+	input := LinkContactsInput{
+		ContactID1:       c1.ID,
+		ContactID2:       c2.ID,
+		RelationshipType: "colleague",
+		Context:          "Work together",
+	}
+
+	_, output, err := handler.LinkContacts(nil, nil, input)
+	if err != nil {
+		t.Fatalf("LinkContacts failed: %v", err)
+	}
+
+	if output.ID == "" {
+		t.Error("ID was not set")
+	}
+	if output.RelationshipType != "colleague" {
+		t.Errorf("Expected type 'colleague', got %s", output.RelationshipType)
+	}
+}
+
+func TestLinkContactsTypedValidation(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewRelationshipHandlers(client)
+
+	// Missing contact_id_1
+	_, _, err := handler.LinkContacts(nil, nil, LinkContactsInput{
+		ContactID2: uuid.New().String(),
+	})
+	if err == nil {
+		t.Error("Expected error for missing contact_id_1")
+	}
+
+	// Missing contact_id_2
+	_, _, err = handler.LinkContacts(nil, nil, LinkContactsInput{
+		ContactID1: uuid.New().String(),
+	})
+	if err == nil {
+		t.Error("Expected error for missing contact_id_2")
+	}
+
+	// Invalid contact_id_1
+	_, _, err = handler.LinkContacts(nil, nil, LinkContactsInput{
+		ContactID1: "invalid",
+		ContactID2: uuid.New().String(),
+	})
+	if err == nil {
+		t.Error("Expected error for invalid contact_id_1")
+	}
+}
+
+func TestFindContactRelationshipsTyped(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewRelationshipHandlers(client)
+	contactHandler := NewContactHandlers(client)
+
+	// Create contacts
+	_, c1, _ := contactHandler.AddContact(nil, nil, AddContactInput{Name: "Find Alice"})
+	_, c2, _ := contactHandler.AddContact(nil, nil, AddContactInput{Name: "Find Bob"})
+
+	// Link contacts
+	_, _, _ = handler.LinkContacts(nil, nil, LinkContactsInput{
+		ContactID1:       c1.ID,
+		ContactID2:       c2.ID,
+		RelationshipType: "friend",
+	})
+
+	// Find relationships
+	input := FindContactRelationshipsInput{
+		ContactID: c1.ID,
+	}
+
+	_, output, err := handler.FindContactRelationships(nil, nil, input)
+	if err != nil {
+		t.Fatalf("FindContactRelationships failed: %v", err)
+	}
+
+	if len(output.Relationships) != 1 {
+		t.Errorf("Expected 1 relationship, got %d", len(output.Relationships))
+	}
+}
+
+func TestFindContactRelationshipsTypedValidation(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewRelationshipHandlers(client)
+
+	// Missing contact_id
+	_, _, err := handler.FindContactRelationships(nil, nil, FindContactRelationshipsInput{})
+	if err == nil {
+		t.Error("Expected error for missing contact_id")
+	}
+
+	// Invalid contact_id
+	_, _, err = handler.FindContactRelationships(nil, nil, FindContactRelationshipsInput{
+		ContactID: "invalid",
+	})
+	if err == nil {
+		t.Error("Expected error for invalid contact_id")
+	}
+}
+
+func TestRemoveRelationshipTyped(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewRelationshipHandlers(client)
+	contactHandler := NewContactHandlers(client)
+
+	// Create contacts and link them
+	_, c1, _ := contactHandler.AddContact(nil, nil, AddContactInput{Name: "Remove Alice"})
+	_, c2, _ := contactHandler.AddContact(nil, nil, AddContactInput{Name: "Remove Bob"})
+	_, rel, _ := handler.LinkContacts(nil, nil, LinkContactsInput{
+		ContactID1: c1.ID,
+		ContactID2: c2.ID,
+	})
+
+	// Remove relationship
+	input := RemoveRelationshipInput{
+		RelationshipID: rel.ID,
+	}
+
+	_, output, err := handler.RemoveRelationship(nil, nil, input)
+	if err != nil {
+		t.Fatalf("RemoveRelationship failed: %v", err)
+	}
+
+	if !output.Success {
+		t.Error("Expected success true")
+	}
+}
+
+func TestRemoveRelationshipTypedValidation(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewRelationshipHandlers(client)
+
+	// Missing relationship_id
+	_, _, err := handler.RemoveRelationship(nil, nil, RemoveRelationshipInput{})
+	if err == nil {
+		t.Error("Expected error for missing relationship_id")
+	}
+
+	// Invalid relationship_id
+	_, _, err = handler.RemoveRelationship(nil, nil, RemoveRelationshipInput{
+		RelationshipID: "invalid",
+	})
+	if err == nil {
+		t.Error("Expected error for invalid relationship_id")
+	}
+}
+
+func TestUpdateRelationshipTyped(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewRelationshipHandlers(client)
+	contactHandler := NewContactHandlers(client)
+
+	// Create contacts and link them
+	_, c1, _ := contactHandler.AddContact(nil, nil, AddContactInput{Name: "Update Alice"})
+	_, c2, _ := contactHandler.AddContact(nil, nil, AddContactInput{Name: "Update Bob"})
+	_, rel, _ := handler.LinkContacts(nil, nil, LinkContactsInput{
+		ContactID1:       c1.ID,
+		ContactID2:       c2.ID,
+		RelationshipType: "colleague",
+	})
+
+	// Update relationship
+	input := UpdateRelationshipInput{
+		RelationshipID:   rel.ID,
+		RelationshipType: "friend",
+		Context:          "Became friends",
+	}
+
+	_, output, err := handler.UpdateRelationship(nil, nil, input)
+	if err != nil {
+		t.Fatalf("UpdateRelationship failed: %v", err)
+	}
+
+	if !output.Success {
+		t.Error("Expected success true")
+	}
+	if output.Message == "" {
+		t.Error("Expected a message")
+	}
+}
+
+func TestUpdateRelationshipTypedValidation(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewRelationshipHandlers(client)
+
+	// Missing relationship_id
+	_, _, err := handler.UpdateRelationship(nil, nil, UpdateRelationshipInput{
+		RelationshipType: "friend",
+	})
+	if err == nil {
+		t.Error("Expected error for missing relationship_id")
+	}
+
+	// Invalid relationship_id
+	_, _, err = handler.UpdateRelationship(nil, nil, UpdateRelationshipInput{
+		RelationshipID:   "invalid",
+		RelationshipType: "friend",
+	})
+	if err == nil {
+		t.Error("Expected error for invalid relationship_id")
+	}
+}

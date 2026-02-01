@@ -352,3 +352,135 @@ func TestDeleteRelationship(t *testing.T) {
 		t.Fatalf("Expected no error when deleting non-existent relationship, got %v", err)
 	}
 }
+
+func TestUpdateRelationship(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	// Create two contacts
+	contact1 := &models.Contact{Name: "Alice Smith"}
+	if err := CreateContact(db, contact1); err != nil {
+		t.Fatalf("Failed to create contact1: %v", err)
+	}
+
+	contact2 := &models.Contact{Name: "Bob Jones"}
+	if err := CreateContact(db, contact2); err != nil {
+		t.Fatalf("Failed to create contact2: %v", err)
+	}
+
+	// Create a relationship
+	rel := &models.Relationship{
+		ContactID1:       contact1.ID,
+		ContactID2:       contact2.ID,
+		RelationshipType: "colleague",
+		Context:          "Work together",
+	}
+
+	if err := CreateRelationship(db, rel); err != nil {
+		t.Fatalf("Failed to create relationship: %v", err)
+	}
+
+	// Test updating the relationship
+	err := UpdateRelationship(db, rel.ID, "friend", "Met at conference, became friends")
+	if err != nil {
+		t.Fatalf("Failed to update relationship: %v", err)
+	}
+
+	// Verify update
+	updated, err := GetRelationship(db, rel.ID)
+	if err != nil {
+		t.Fatalf("Failed to get updated relationship: %v", err)
+	}
+	if updated == nil {
+		t.Fatal("Expected relationship to exist")
+	}
+	if updated.RelationshipType != "friend" {
+		t.Errorf("Expected type 'friend', got '%s'", updated.RelationshipType)
+	}
+	if updated.Context != "Met at conference, became friends" {
+		t.Errorf("Expected updated context, got '%s'", updated.Context)
+	}
+
+	// Test updating non-existent relationship
+	err = UpdateRelationship(db, uuid.New(), "test", "test")
+	if err == nil {
+		t.Error("Expected error when updating non-existent relationship")
+	}
+}
+
+func TestGetAllRelationships(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	// Create three contacts
+	contact1 := &models.Contact{Name: "Alice Smith"}
+	if err := CreateContact(db, contact1); err != nil {
+		t.Fatalf("Failed to create contact1: %v", err)
+	}
+
+	contact2 := &models.Contact{Name: "Bob Jones"}
+	if err := CreateContact(db, contact2); err != nil {
+		t.Fatalf("Failed to create contact2: %v", err)
+	}
+
+	contact3 := &models.Contact{Name: "Charlie Brown"}
+	if err := CreateContact(db, contact3); err != nil {
+		t.Fatalf("Failed to create contact3: %v", err)
+	}
+
+	// Test empty relationships
+	rels, err := GetAllRelationships(db)
+	if err != nil {
+		t.Fatalf("Failed to get all relationships: %v", err)
+	}
+	if len(rels) != 0 {
+		t.Errorf("Expected 0 relationships, got %d", len(rels))
+	}
+
+	// Create multiple relationships
+	rel1 := &models.Relationship{
+		ContactID1:       contact1.ID,
+		ContactID2:       contact2.ID,
+		RelationshipType: "colleague",
+	}
+	if err := CreateRelationship(db, rel1); err != nil {
+		t.Fatalf("Failed to create relationship 1: %v", err)
+	}
+
+	rel2 := &models.Relationship{
+		ContactID1:       contact2.ID,
+		ContactID2:       contact3.ID,
+		RelationshipType: "friend",
+	}
+	if err := CreateRelationship(db, rel2); err != nil {
+		t.Fatalf("Failed to create relationship 2: %v", err)
+	}
+
+	rel3 := &models.Relationship{
+		ContactID1:       contact1.ID,
+		ContactID2:       contact3.ID,
+		RelationshipType: "mentor",
+		Context:          "Alice mentors Charlie",
+	}
+	if err := CreateRelationship(db, rel3); err != nil {
+		t.Fatalf("Failed to create relationship 3: %v", err)
+	}
+
+	// Get all relationships
+	rels, err = GetAllRelationships(db)
+	if err != nil {
+		t.Fatalf("Failed to get all relationships: %v", err)
+	}
+	if len(rels) != 3 {
+		t.Errorf("Expected 3 relationships, got %d", len(rels))
+	}
+
+	// Verify relationship types
+	types := make(map[string]bool)
+	for _, r := range rels {
+		types[r.RelationshipType] = true
+	}
+	if !types["colleague"] || !types["friend"] || !types["mentor"] {
+		t.Error("Expected all relationship types to be present")
+	}
+}

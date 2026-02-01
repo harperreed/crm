@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/harperreed/pagen/db"
 	"github.com/harperreed/pagen/sync"
@@ -136,4 +137,203 @@ func hasSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// TestSyncStatusCommand tests the sync status command with empty database.
+func TestSyncStatusCommand(t *testing.T) {
+	// Create temp database
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	database, err := db.OpenDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	_, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err = SyncStatusCommand(database, []string{})
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Errorf("SyncStatusCommand() unexpected error: %v", err)
+	}
+}
+
+// TestSyncStatusCommandWithData tests sync status with existing sync states.
+func TestSyncStatusCommandWithData(t *testing.T) {
+	// Create temp database
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	database, err := db.OpenDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	// Insert some sync states with all required fields
+	now := time.Now()
+	syncToken := "test-token"
+	_, err = database.Exec(`INSERT INTO sync_state (service, status, last_sync_time, last_sync_token, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"calendar", "idle", now, syncToken, now, now)
+	if err != nil {
+		t.Fatalf("Failed to insert sync state: %v", err)
+	}
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	_, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err = SyncStatusCommand(database, []string{})
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Errorf("SyncStatusCommand() unexpected error: %v", err)
+	}
+}
+
+// TestSyncResetCommand tests the sync reset command.
+func TestSyncResetCommand(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{"no args shows help", []string{}, false},
+		{"reset specific service", []string{"calendar"}, false},
+		{"reset nonexistent service", []string{"invalid"}, false},
+		{"reset all services", []string{"all"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temp database
+			tempDir := t.TempDir()
+			dbPath := filepath.Join(tempDir, "test.db")
+			database, err := db.OpenDatabase(dbPath)
+			if err != nil {
+				t.Fatalf("Failed to open database: %v", err)
+			}
+			defer func() { _ = database.Close() }()
+
+			// Insert sync state for testing reset
+			_, _ = database.Exec(`INSERT INTO sync_state (service, status, last_sync_time) VALUES (?, ?, ?)`,
+				"calendar", "syncing", time.Now())
+
+			// Capture stdout
+			oldStdout := os.Stdout
+			_, w, _ := os.Pipe()
+			os.Stdout = w
+
+			err = SyncResetCommand(database, tt.args)
+
+			_ = w.Close()
+			os.Stdout = oldStdout
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("SyncResetCommand() expected error but got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("SyncResetCommand() unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestSyncContactsCommand_NoToken verifies error when no token exists.
+func TestSyncContactsCommand_NoToken(t *testing.T) {
+	// Create temp database
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	database, err := db.OpenDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	// Ensure no token file exists
+	tokenPath := sync.TokenPath()
+	_ = os.Remove(tokenPath)
+
+	err = SyncContactsCommand(database, []string{})
+	if err == nil {
+		t.Error("Expected error when token doesn't exist, got nil")
+	}
+
+	expectedMsg := "no authentication token found"
+	if err != nil && !contains(err.Error(), expectedMsg) {
+		t.Errorf("Expected error to contain %q, got: %v", expectedMsg, err)
+	}
+}
+
+// TestSyncGmailCommand_NoToken verifies error when no token exists.
+func TestSyncGmailCommand_NoToken(t *testing.T) {
+	// Create temp database
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	database, err := db.OpenDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	// Ensure no token file exists
+	tokenPath := sync.TokenPath()
+	_ = os.Remove(tokenPath)
+
+	err = SyncGmailCommand(database, []string{})
+	if err == nil {
+		t.Error("Expected error when token doesn't exist, got nil")
+	}
+
+	expectedMsg := "no authentication token found"
+	if err != nil && !contains(err.Error(), expectedMsg) {
+		t.Errorf("Expected error to contain %q, got: %v", expectedMsg, err)
+	}
+}
+
+// TestSyncAllCommand_NoToken verifies error when no token exists.
+func TestSyncAllCommand_NoToken(t *testing.T) {
+	// Create temp database
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test.db")
+	database, err := db.OpenDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer func() { _ = database.Close() }()
+
+	// Ensure no token file exists
+	tokenPath := sync.TokenPath()
+	_ = os.Remove(tokenPath)
+
+	// Capture stdout (this command prints to stdout)
+	oldStdout := os.Stdout
+	_, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err = SyncAllCommand(database)
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	if err == nil {
+		t.Error("Expected error when token doesn't exist, got nil")
+	}
+
+	expectedMsg := "no authentication token found"
+	if err != nil && !contains(err.Error(), expectedMsg) {
+		t.Errorf("Expected error to contain %q, got: %v", expectedMsg, err)
+	}
 }

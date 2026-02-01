@@ -386,6 +386,112 @@ func TestQueryCRMInvalidEntityType(t *testing.T) {
 	}
 }
 
+func TestQueryCRMDefaultLimit(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handlers := NewQueryHandlers(client)
+
+	// Test with zero limit - should use default
+	input := QueryCRMInput{
+		EntityType: "contact",
+		Limit:      0, // Should default to 10
+	}
+
+	_, _, err := handlers.QueryCRM(context.Background(), &mcp.CallToolRequest{}, input)
+	if err != nil {
+		t.Fatalf("QueryCRM failed: %v", err)
+	}
+}
+
+func TestQueryCRMInvalidCompanyID(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handlers := NewQueryHandlers(client)
+
+	input := QueryCRMInput{
+		EntityType: "contact",
+		Filters: map[string]interface{}{
+			"company_id": "invalid-uuid",
+		},
+	}
+
+	_, _, err := handlers.QueryCRM(context.Background(), &mcp.CallToolRequest{}, input)
+	if err == nil {
+		t.Fatal("Expected error for invalid company_id")
+	}
+}
+
+func TestQueryCRMDealInvalidCompanyID(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handlers := NewQueryHandlers(client)
+
+	input := QueryCRMInput{
+		EntityType: "deal",
+		Filters: map[string]interface{}{
+			"company_id": "not-a-valid-uuid",
+		},
+	}
+
+	_, _, err := handlers.QueryCRM(context.Background(), &mcp.CallToolRequest{}, input)
+	if err == nil {
+		t.Fatal("Expected error for invalid company_id in deal query")
+	}
+}
+
+func TestQueryCRMRelationshipInvalidContactID(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handlers := NewQueryHandlers(client)
+
+	input := QueryCRMInput{
+		EntityType: "relationship",
+		Filters: map[string]interface{}{
+			"contact_id": "bad-uuid",
+		},
+	}
+
+	_, _, err := handlers.QueryCRM(context.Background(), &mcp.CallToolRequest{}, input)
+	if err == nil {
+		t.Fatal("Expected error for invalid contact_id in relationship query")
+	}
+}
+
+func TestQueryCRMRelationshipMissingContactID(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handlers := NewQueryHandlers(client)
+
+	input := QueryCRMInput{
+		EntityType: "relationship",
+		Filters:    map[string]interface{}{},
+	}
+
+	_, _, err := handlers.QueryCRM(context.Background(), &mcp.CallToolRequest{}, input)
+	if err == nil {
+		t.Fatal("Expected error for missing contact_id in relationship query")
+	}
+
+	expectedError := "contact_id filter is required"
+	if !contains(err.Error(), expectedError) {
+		t.Errorf("Expected error containing '%s', got: %v", expectedError, err)
+	}
+}
+
+func TestNewQueryHandlers(t *testing.T) {
+	client, cleanup, _ := repository.NewTestDB()
+	defer cleanup()
+
+	handlers := NewQueryHandlers(client)
+	if handlers == nil {
+		t.Fatal("Expected non-nil QueryHandlers")
+	}
+
+	if handlers.db != client {
+		t.Error("Expected db to be set")
+	}
+}
+
 // Helper function to check if string contains substring.
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && containsHelper(s, substr))

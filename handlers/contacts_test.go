@@ -386,3 +386,348 @@ func TestLogContactInteractionNotFound(t *testing.T) {
 		t.Error("Expected error for non-existent contact")
 	}
 }
+
+// Tests for the new typed handlers (non-legacy).
+func TestAddContactTyped(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	// Test valid contact creation
+	input := AddContactInput{
+		Name:  "John Typed",
+		Email: "john.typed@example.com",
+		Phone: "555-1234",
+		Notes: "Test typed contact",
+	}
+
+	_, output, err := handler.AddContact(nil, nil, input)
+	if err != nil {
+		t.Fatalf("AddContact failed: %v", err)
+	}
+
+	if output.Name != "John Typed" {
+		t.Errorf("Expected name 'John Typed', got %v", output.Name)
+	}
+	if output.Email != "john.typed@example.com" {
+		t.Errorf("Expected email 'john.typed@example.com', got %v", output.Email)
+	}
+	if output.ID == "" {
+		t.Error("ID was not set")
+	}
+}
+
+func TestAddContactTypedValidation(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	// Missing required name
+	input := AddContactInput{
+		Email: "test@example.com",
+	}
+
+	_, _, err := handler.AddContact(nil, nil, input)
+	if err == nil {
+		t.Error("Expected validation error for missing name")
+	}
+}
+
+func TestAddContactTypedWithCompany(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	// Add contact with new company (should create it)
+	input := AddContactInput{
+		Name:        "Company Contact",
+		Email:       "cc@newcorp.com",
+		CompanyName: "New Corp Typed",
+	}
+
+	_, output, err := handler.AddContact(nil, nil, input)
+	if err != nil {
+		t.Fatalf("AddContact failed: %v", err)
+	}
+
+	if output.CompanyID == nil {
+		t.Error("Company ID was not set")
+	}
+}
+
+func TestFindContactsTyped(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	// Add test contacts
+	_, _, _ = handler.AddContact(nil, nil, AddContactInput{Name: "Alice Typed", Email: "alice@typed.com"})
+	_, _, _ = handler.AddContact(nil, nil, AddContactInput{Name: "Bob Typed", Email: "bob@typed.com"})
+
+	// Search by name
+	input := FindContactsInput{
+		Query: "typed",
+		Limit: 10,
+	}
+
+	_, output, err := handler.FindContacts(nil, nil, input)
+	if err != nil {
+		t.Fatalf("FindContacts failed: %v", err)
+	}
+
+	if len(output.Contacts) != 2 {
+		t.Errorf("Expected 2 contacts, got %d", len(output.Contacts))
+	}
+}
+
+func TestFindContactsTypedWithCompanyID(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	// Create contact with company
+	_, output, _ := handler.AddContact(nil, nil, AddContactInput{
+		Name:        "Company Contact",
+		CompanyName: "Test Corp Typed",
+	})
+	companyID := output.CompanyID
+
+	// Search by company_id
+	input := FindContactsInput{
+		CompanyID: *companyID,
+	}
+
+	_, result, err := handler.FindContacts(nil, nil, input)
+	if err != nil {
+		t.Fatalf("FindContacts failed: %v", err)
+	}
+
+	if len(result.Contacts) != 1 {
+		t.Errorf("Expected 1 contact, got %d", len(result.Contacts))
+	}
+}
+
+func TestFindContactsTypedInvalidCompanyID(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	input := FindContactsInput{
+		CompanyID: "invalid-uuid",
+	}
+
+	_, _, err := handler.FindContacts(nil, nil, input)
+	if err == nil {
+		t.Error("Expected error for invalid company_id")
+	}
+}
+
+func TestUpdateContactTyped(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	// Create contact
+	_, created, _ := handler.AddContact(nil, nil, AddContactInput{
+		Name:  "Original Typed",
+		Email: "original@typed.com",
+	})
+
+	// Update contact
+	input := UpdateContactInput{
+		ID:    created.ID,
+		Name:  "Updated Typed",
+		Email: "updated@typed.com",
+		Phone: "555-9999",
+		Notes: "Updated notes",
+	}
+
+	_, output, err := handler.UpdateContact(nil, nil, input)
+	if err != nil {
+		t.Fatalf("UpdateContact failed: %v", err)
+	}
+
+	if output.Name != "Updated Typed" {
+		t.Errorf("Expected name 'Updated Typed', got %v", output.Name)
+	}
+	if output.Email != "updated@typed.com" {
+		t.Errorf("Expected email 'updated@typed.com', got %v", output.Email)
+	}
+}
+
+func TestUpdateContactTypedValidation(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	// Missing ID
+	input := UpdateContactInput{
+		Name: "Test",
+	}
+
+	_, _, err := handler.UpdateContact(nil, nil, input)
+	if err == nil {
+		t.Error("Expected error for missing ID")
+	}
+}
+
+func TestUpdateContactTypedInvalidID(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	input := UpdateContactInput{
+		ID:   "invalid-uuid",
+		Name: "Test",
+	}
+
+	_, _, err := handler.UpdateContact(nil, nil, input)
+	if err == nil {
+		t.Error("Expected error for invalid ID")
+	}
+}
+
+func TestLogContactInteractionTyped(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	// Create contact
+	_, created, _ := handler.AddContact(nil, nil, AddContactInput{
+		Name: "Interaction Contact",
+	})
+
+	// Log interaction
+	input := LogContactInteractionInput{
+		ContactID: created.ID,
+		Note:      "Had a typed call",
+	}
+
+	_, output, err := handler.LogContactInteraction(nil, nil, input)
+	if err != nil {
+		t.Fatalf("LogContactInteraction failed: %v", err)
+	}
+
+	if output.LastContactedAt == nil {
+		t.Error("LastContactedAt was not set")
+	}
+}
+
+func TestLogContactInteractionTypedWithDate(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	// Create contact
+	_, created, _ := handler.AddContact(nil, nil, AddContactInput{
+		Name: "Date Contact",
+	})
+
+	// Log interaction with custom date
+	input := LogContactInteractionInput{
+		ContactID:       created.ID,
+		Note:            "Past interaction",
+		InteractionDate: "2024-06-15T14:00:00Z",
+	}
+
+	_, output, err := handler.LogContactInteraction(nil, nil, input)
+	if err != nil {
+		t.Fatalf("LogContactInteraction failed: %v", err)
+	}
+
+	if output.LastContactedAt == nil {
+		t.Error("LastContactedAt was not set")
+	}
+}
+
+func TestLogContactInteractionTypedInvalidDate(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	// Create contact
+	_, created, _ := handler.AddContact(nil, nil, AddContactInput{
+		Name: "Invalid Date Contact",
+	})
+
+	// Log interaction with invalid date
+	input := LogContactInteractionInput{
+		ContactID:       created.ID,
+		InteractionDate: "not-a-date",
+	}
+
+	_, _, err := handler.LogContactInteraction(nil, nil, input)
+	if err == nil {
+		t.Error("Expected error for invalid date format")
+	}
+}
+
+func TestLogContactInteractionTypedValidation(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	// Missing contact_id
+	input := LogContactInteractionInput{
+		Note: "Test note",
+	}
+
+	_, _, err := handler.LogContactInteraction(nil, nil, input)
+	if err == nil {
+		t.Error("Expected error for missing contact_id")
+	}
+}
+
+func TestDeleteContactTyped(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	// Create contact
+	_, created, _ := handler.AddContact(nil, nil, AddContactInput{
+		Name: "To Delete",
+	})
+
+	// Delete contact
+	input := DeleteContactInput{
+		ID: created.ID,
+	}
+
+	_, output, err := handler.DeleteContact(nil, nil, input)
+	if err != nil {
+		t.Fatalf("DeleteContact failed: %v", err)
+	}
+
+	if !output.Success {
+		t.Error("Delete should succeed")
+	}
+}
+
+func TestDeleteContactTypedValidation(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	// Missing ID
+	input := DeleteContactInput{}
+
+	_, _, err := handler.DeleteContact(nil, nil, input)
+	if err == nil {
+		t.Error("Expected error for missing ID")
+	}
+}
+
+func TestDeleteContactTypedInvalidID(t *testing.T) {
+	client := func() *repository.DB { db, cleanup, _ := repository.NewTestDB(); t.Cleanup(cleanup); return db }()
+
+	handler := NewContactHandlers(client)
+
+	input := DeleteContactInput{
+		ID: "invalid-uuid",
+	}
+
+	_, _, err := handler.DeleteContact(nil, nil, input)
+	if err == nil {
+		t.Error("Expected error for invalid ID")
+	}
+}

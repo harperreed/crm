@@ -226,3 +226,86 @@ func TestSyncWorkflow(t *testing.T) {
 		t.Error("expected sync token to be available for incremental sync")
 	}
 }
+
+func TestGetAllSyncStates(t *testing.T) {
+	database := setupTestDB(t)
+	defer func() { _ = database.Close() }()
+
+	// Test empty sync states
+	states, err := GetAllSyncStates(database)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(states) != 0 {
+		t.Errorf("expected 0 sync states, got %d", len(states))
+	}
+
+	// Create multiple sync states
+	err = UpdateSyncStatus(database, "calendar", "idle", nil)
+	if err != nil {
+		t.Fatalf("failed to create calendar sync state: %v", err)
+	}
+
+	err = UpdateSyncStatus(database, "email", "syncing", nil)
+	if err != nil {
+		t.Fatalf("failed to create email sync state: %v", err)
+	}
+
+	errMsg := "sync failed"
+	err = UpdateSyncStatus(database, "contacts", "error", &errMsg)
+	if err != nil {
+		t.Fatalf("failed to create contacts sync state: %v", err)
+	}
+
+	// Add tokens to some services
+	err = UpdateSyncToken(database, "calendar", "cal-token-123")
+	if err != nil {
+		t.Fatalf("failed to update calendar token: %v", err)
+	}
+
+	// Get all sync states
+	states, err = GetAllSyncStates(database)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(states) != 3 {
+		t.Errorf("expected 3 sync states, got %d", len(states))
+	}
+
+	// Verify states are ordered by service name
+	if len(states) >= 3 {
+		if states[0].Service != "calendar" {
+			t.Errorf("expected first service 'calendar', got %q", states[0].Service)
+		}
+		if states[1].Service != "contacts" {
+			t.Errorf("expected second service 'contacts', got %q", states[1].Service)
+		}
+		if states[2].Service != "email" {
+			t.Errorf("expected third service 'email', got %q", states[2].Service)
+		}
+	}
+
+	// Verify state details
+	for _, state := range states {
+		switch state.Service {
+		case "calendar":
+			if state.Status != "idle" {
+				t.Errorf("expected calendar status 'idle', got %q", state.Status)
+			}
+			if state.LastSyncToken == nil || *state.LastSyncToken != "cal-token-123" {
+				t.Errorf("expected calendar token 'cal-token-123', got %v", state.LastSyncToken)
+			}
+		case "email":
+			if state.Status != "syncing" {
+				t.Errorf("expected email status 'syncing', got %q", state.Status)
+			}
+		case "contacts":
+			if state.Status != "error" {
+				t.Errorf("expected contacts status 'error', got %q", state.Status)
+			}
+			if state.ErrorMessage == nil || *state.ErrorMessage != "sync failed" {
+				t.Errorf("expected contacts error 'sync failed', got %v", state.ErrorMessage)
+			}
+		}
+	}
+}
