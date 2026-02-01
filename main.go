@@ -349,6 +349,12 @@ func main() {
 			}
 		}
 
+	case "install-skill":
+		// Install Claude Code skill
+		if err := cli.InstallSkillCommand(); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
 	default:
 		fmt.Printf("Unknown command: %s\n\n", command)
 		printUsage()
@@ -373,6 +379,7 @@ COMMANDS:
   web                    Start web UI server
   followups              Follow-up tracking commands
   export                 Export data to YAML/Markdown
+  install-skill          Install Claude Code skill
 
 MCP SERVER:
   pagen mcp              Start MCP server (for Claude Desktop integration)
@@ -481,6 +488,9 @@ EXPORT COMMANDS:
     all                          Export all data (default)
     --format <yaml|markdown>     Output format (default: yaml)
     --output <file>              Output file (default: stdout)
+
+SKILL COMMAND:
+  pagen install-skill            Install Claude Code skill to ~/.claude/skills/pagen/
 
 EXAMPLES:
   # Start MCP server for Claude Desktop
