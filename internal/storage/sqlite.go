@@ -18,6 +18,9 @@ type SqliteStore struct {
 	dbPath string
 }
 
+// Compile-time check that SqliteStore satisfies the Storage interface.
+var _ Storage = (*SqliteStore)(nil)
+
 // NewSqliteStore creates a new SqliteStore, ensuring parent directories exist,
 // opening the database with foreign keys and WAL mode, and initializing the schema.
 func NewSqliteStore(dbPath string) (*SqliteStore, error) {
