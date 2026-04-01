@@ -1,0 +1,39 @@
+# ABOUTME: Pre-commit hooks configuration for crm project.
+# ABOUTME: Runs formatting, linting, and tests before each commit.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^go\.(mod|sum)$
+      - id: end-of-file-fixer
+        exclude: ^go\.(mod|sum)$
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+        exclude: ^crm$
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+      - id: check-case-conflict
+
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+      - id: go-imports
+      - id: go-mod-tidy
+      - id: golangci-lint
+        args: ['--timeout=10m', '--fix']
+      - id: go-unit-tests
+        args: ['-race', '-count=1', './...']
+
+  - repo: local
+    hooks:
+      - id: go-vet
+        name: go vet
+        entry: go vet
+        language: system
+        args: ['./...']
+        files: \.go$
+        pass_filenames: false

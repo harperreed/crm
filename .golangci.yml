@@ -1,0 +1,144 @@
+# ABOUTME: golangci-lint configuration for Go code quality checks.
+# ABOUTME: Enables linters for bugs, performance, security, style, and maintainability.
+
+version: 2
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+
+output:
+  print-issued-lines: true
+  print-linter-name: true
+  sort-results: true
+
+linters:
+  enable:
+    # Bug detection
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - nilerr
+    - nilnil
+    - errchkjson
+    - contextcheck
+
+    # Performance
+    - prealloc
+    - makezero
+
+    # Style
+    - misspell
+    - whitespace
+    - godot
+
+    # Code complexity
+    - gocyclo
+    - gocognit
+    - nestif
+    - funlen
+
+    # Security
+    - gosec
+    - copyloopvar
+
+    # Error handling
+    - errorlint
+
+    # Maintainability
+    - gocritic
+    - unconvert
+    - unparam
+    - wastedassign
+
+  disable:
+    - exhaustruct
+    - exhaustive
+    - varnamelen
+    - tagliatelle
+    - wrapcheck
+    - paralleltest
+    - thelper
+    - testpackage
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: false
+    exclude-functions:
+      - (*github.com/spf13/pflag.FlagSet).GetString
+      - (io.Closer).Close
+
+  govet:
+    enable-all: true
+    disable:
+      - shadow
+      - fieldalignment
+
+  gocyclo:
+    min-complexity: 20
+
+  gocognit:
+    min-complexity: 30
+
+  funlen:
+    lines: 100
+    statements: 50
+    ignore-comments: true
+
+  misspell:
+    locale: US
+
+  gosec:
+    excludes:
+      - G404
+
+  errorlint:
+    errorf: true
+    asserts: true
+    comparison: true
+
+  nestif:
+    min-complexity: 5
+
+  staticcheck:
+    checks: ["all"]
+
+issues:
+  exclude-use-default: false
+  exclude-case-sensitive: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - gocognit
+        - errcheck
+        - funlen
+        - gosec
+
+    - path: cmd/.*main\.go
+      linters:
+        - gocyclo
+        - gocognit
+        - funlen
+
+    - linters:
+        - lll
+      source: "^//go:generate "
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+severity:
+  default-severity: error
+  case-sensitive: false
