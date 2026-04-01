@@ -55,9 +55,7 @@ func (c *Config) OpenStorage() (storage.Storage, error) {
 		dbPath := filepath.Join(c.GetDataDir(), "crm.db")
 		return storage.NewSqliteStore(dbPath)
 	case "markdown":
-		// NewMarkdownStore returns an error until the markdown backend is implemented.
-		_, err := storage.NewMarkdownStore(c.GetDataDir())
-		return nil, err
+		return storage.NewMarkdownStore(c.GetDataDir())
 	default:
 		return nil, fmt.Errorf("unknown storage backend: %q", c.GetBackend())
 	}
