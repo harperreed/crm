@@ -1,0 +1,53 @@
+# ABOUTME: GoReleaser configuration for building and releasing crm.
+# ABOUTME: Builds cross-platform binaries (pure Go, no CGO) and publishes to Homebrew tap.
+
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - main: ./cmd/crm
+    binary: crm
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE*
+      - README*
+
+brews:
+  - repository:
+      owner: harperreed
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/harperreed/crm"
+    description: "Lightweight CRM with MCP server and CLI for contacts, companies, and relationships"
+    install: |
+      bin.install "crm"
+    test: |
+      system "#{bin}/crm", "--version"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
