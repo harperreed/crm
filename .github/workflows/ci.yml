@@ -82,7 +82,7 @@ jobs:
         run: make build
 
       - name: Verify binary
-        run: ./crm --version
+        run: ./crm version
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4

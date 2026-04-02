@@ -176,7 +176,7 @@ func (s *MarkdownStore) ListCompanies(filter *CompanyFilter) ([]*models.Company,
 	if err != nil {
 		return nil, err
 	}
-	var results []*models.Company
+	results := make([]*models.Company, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			continue

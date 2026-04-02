@@ -179,7 +179,7 @@ func (s *MarkdownStore) ListContacts(filter *ContactFilter) ([]*models.Contact, 
 	if err != nil {
 		return nil, err
 	}
-	var results []*models.Contact
+	results := make([]*models.Contact, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			continue
