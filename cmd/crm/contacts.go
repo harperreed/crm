@@ -30,7 +30,7 @@ var contactAddCmd = &cobra.Command{
 
 		email, _ := cmd.Flags().GetString("email")
 		phone, _ := cmd.Flags().GetString("phone")
-		fields, _ := cmd.Flags().GetStringSlice("field")
+		fields, _ := cmd.Flags().GetStringArray("field")
 		tags, _ := cmd.Flags().GetStringSlice("tag")
 
 		c.Email = email
@@ -170,7 +170,7 @@ var contactEditCmd = &cobra.Command{
 			c.Phone, _ = cmd.Flags().GetString("phone")
 		}
 		if cmd.Flags().Changed("field") {
-			fields, _ := cmd.Flags().GetStringSlice("field")
+			fields, _ := cmd.Flags().GetStringArray("field")
 			for _, f := range fields {
 				k, v, ok := strings.Cut(f, "=")
 				if !ok {
@@ -224,7 +224,7 @@ func resolveContact(idStr string) (*models.Contact, error) {
 func init() {
 	contactAddCmd.Flags().String("email", "", "contact email address")
 	contactAddCmd.Flags().String("phone", "", "contact phone number")
-	contactAddCmd.Flags().StringSlice("field", nil, "custom field as KEY=VALUE (repeatable)")
+	contactAddCmd.Flags().StringArray("field", nil, "custom field as KEY=VALUE (repeatable)")
 	contactAddCmd.Flags().StringSlice("tag", nil, "tag to apply (repeatable)")
 
 	contactListCmd.Flags().StringP("tag", "t", "", "filter by tag")
@@ -234,7 +234,7 @@ func init() {
 	contactEditCmd.Flags().String("name", "", "new name")
 	contactEditCmd.Flags().String("email", "", "new email")
 	contactEditCmd.Flags().String("phone", "", "new phone")
-	contactEditCmd.Flags().StringSlice("field", nil, "set field KEY=VALUE (repeatable)")
+	contactEditCmd.Flags().StringArray("field", nil, "set field KEY=VALUE (repeatable)")
 	contactEditCmd.Flags().StringSlice("tag", nil, "replace tags (repeatable)")
 
 	contactCmd.AddCommand(contactAddCmd)

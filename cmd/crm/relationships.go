@@ -4,22 +4,39 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/fatih/color"
 	"github.com/google/uuid"
 	"github.com/harperreed/crm/internal/models"
 	"github.com/spf13/cobra"
 )
 
+// resolveEntityID resolves a UUID string or prefix to a full UUID by checking
+// contacts first, then companies.
+func resolveEntityID(idStr string) (uuid.UUID, error) {
+	if id, err := uuid.Parse(idStr); err == nil {
+		return id, nil
+	}
+	if c, err := store.GetContactByPrefix(idStr); err == nil {
+		return c.ID, nil
+	}
+	if c, err := store.GetCompanyByPrefix(idStr); err == nil {
+		return c.ID, nil
+	}
+	return uuid.Nil, fmt.Errorf("no contact or company found for %q", idStr)
+}
+
 var linkCmd = &cobra.Command{
 	Use:   "link <source-id> <target-id>",
 	Short: "Create a relationship between two entities",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		sourceID, err := uuid.Parse(args[0])
+		sourceID, err := resolveEntityID(args[0])
 		if err != nil {
 			return err
 		}
-		targetID, err := uuid.Parse(args[1])
+		targetID, err := resolveEntityID(args[1])
 		if err != nil {
 			return err
 		}

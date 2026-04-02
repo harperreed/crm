@@ -1,5 +1,6 @@
-crm
+/crm
 bin/
 coverage.out
 *.db
 .private-journal/
+.scratch/

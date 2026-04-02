@@ -29,7 +29,7 @@ var companyAddCmd = &cobra.Command{
 		c := models.NewCompany(args[0])
 
 		domain, _ := cmd.Flags().GetString("domain")
-		fields, _ := cmd.Flags().GetStringSlice("field")
+		fields, _ := cmd.Flags().GetStringArray("field")
 		tags, _ := cmd.Flags().GetStringSlice("tag")
 
 		c.Domain = domain
@@ -162,7 +162,7 @@ var companyEditCmd = &cobra.Command{
 			c.Domain, _ = cmd.Flags().GetString("domain")
 		}
 		if cmd.Flags().Changed("field") {
-			fields, _ := cmd.Flags().GetStringSlice("field")
+			fields, _ := cmd.Flags().GetStringArray("field")
 			for _, f := range fields {
 				k, v, ok := strings.Cut(f, "=")
 				if !ok {
@@ -215,7 +215,7 @@ func resolveCompany(idStr string) (*models.Company, error) {
 
 func init() {
 	companyAddCmd.Flags().String("domain", "", "company domain")
-	companyAddCmd.Flags().StringSlice("field", nil, "custom field as KEY=VALUE (repeatable)")
+	companyAddCmd.Flags().StringArray("field", nil, "custom field as KEY=VALUE (repeatable)")
 	companyAddCmd.Flags().StringSlice("tag", nil, "tag to apply (repeatable)")
 
 	companyListCmd.Flags().StringP("tag", "t", "", "filter by tag")
@@ -224,7 +224,7 @@ func init() {
 
 	companyEditCmd.Flags().String("name", "", "new name")
 	companyEditCmd.Flags().String("domain", "", "new domain")
-	companyEditCmd.Flags().StringSlice("field", nil, "set field KEY=VALUE (repeatable)")
+	companyEditCmd.Flags().StringArray("field", nil, "set field KEY=VALUE (repeatable)")
 	companyEditCmd.Flags().StringSlice("tag", nil, "replace tags (repeatable)")
 
 	companyCmd.AddCommand(companyAddCmd)
