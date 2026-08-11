@@ -21,6 +21,8 @@ cd crm
 make install
 ```
 
+Source installs do not use GoReleaser's linker flags, so `crm --version` reports `dev`.
+
 Check the installed build with either public version entry point:
 
 ```bash
@@ -84,7 +86,7 @@ Start the stdio server with:
 crm mcp
 ```
 
-Claude Code project configuration:
+For project-scoped Claude Code setup, save this configuration as `.mcp.json` in the project root:
 
 ```json
 {
@@ -101,6 +103,8 @@ The server exposes 12 tools for contact and company CRUD plus linking and unlink
 
 Install the bundled Claude Code skill with:
 
+Warning: this command overwrites an existing `~/.claude/skills/crm/SKILL.md` without a backup.
+
 ```bash
 crm install-skill
 ```
@@ -115,7 +119,8 @@ make test           # Run unit and integration tests
 make test-race      # Run tests with the race detector
 make lint           # Run golangci-lint
 make check          # Format, lint, and test
-goreleaser check    # Validate release configuration
 ```
+
+`goreleaser check` currently exits non-zero only because the accepted Homebrew formula configuration uses the deprecated `brews` field.
 
 The project uses Go 1.25.5. SQLite uses the pure-Go `modernc.org/sqlite` driver, so release builds do not require CGO.
