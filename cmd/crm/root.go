@@ -14,9 +14,10 @@ import (
 var store storage.Storage
 
 var rootCmd = &cobra.Command{
-	Use:   "crm",
-	Short: "A simple CRM for contacts, companies, and relationships",
-	Long:  "CRM is a lightweight contact relationship manager accessible via CLI and MCP.",
+	Use:     "crm",
+	Short:   "A simple CRM for contacts, companies, and relationships",
+	Long:    "CRM is a lightweight contact relationship manager accessible via CLI and MCP.",
+	Version: version,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Skip storage init for commands that don't need it.
 		if cmd.Name() == "version" {

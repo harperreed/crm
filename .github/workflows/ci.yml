@@ -81,8 +81,10 @@ jobs:
       - name: Build binary
         run: make build
 
-      - name: Verify binary
-        run: ./crm version
+      - name: Verify version commands
+        run: |
+          ./crm version
+          ./crm --version
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
