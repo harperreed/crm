@@ -1,4 +1,5 @@
 /crm
+/dist/
 bin/
 coverage.out
 *.db
