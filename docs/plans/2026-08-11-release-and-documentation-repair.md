@@ -19,7 +19,7 @@
 - Task 2: accepted in `8f9bea2` and `7bc4a95`; the later commit records Doctor Biz's authoritative decision to retain formula distribution.
 - Task 3: accepted in `430166d`.
 - Task 4: accepted in `9d1fe1e`, `b70ec7e`, and `7e116ea`.
-- Task 5: accepted; contributor guidance and durable project memory now match those results.
+- Task 5: implemented in `19b736d`; quality-review reconciliation is in progress.
 - Task 6: pending.
 
 ---
@@ -410,13 +410,14 @@ Do not bypass hooks.
 
 ### Task 5: Correct contributor docs and shared memory
 
-**Status:** Accepted after source, hook, release-snapshot, and false-claim checks.
+**Status:** Implemented and in quality review. Source, hook, release-snapshot, and false-claim checks pass; quality acceptance is pending this reconciliation.
 
 **Files:**
 
 - Modify: `CLAUDE.md:1-49`
 - Modify: `gotchas.md:1-5`
 - Modify: `docs/plans/2026-08-11-release-and-documentation-repair.md`
+- Review follow-up: `docs/superpowers/specs/2026-08-11-release-and-documentation-repair-design.md`
 
 **Step 1: Replace stale contributor guidance**
 

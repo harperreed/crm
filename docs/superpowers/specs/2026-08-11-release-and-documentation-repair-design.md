@@ -5,6 +5,10 @@
 
 Date: 2026-08-11
 
+> **Decision update — 2026-08-11:** Doctor Biz superseded this design's Homebrew cask migration and retained the generated Homebrew formula. See the [execution plan](../../plans/2026-08-11-release-and-documentation-repair.md) for the implemented decision.
+>
+> `goreleaser check` is expected to exit 2 only for the deprecated `brews` field; `goreleaser release --snapshot --clean` is the passing release validation. The unmatched `LICENSE*` archive glob also remains. Sections below that prescribe a cask migration or a clean `goreleaser check` are historical design records, not the accepted result.
+
 ## Goal
 
 Restore clean release and repository checks, add conventional `crm --version` support without removing `crm version`, and make the user-facing documentation match the shipped program.

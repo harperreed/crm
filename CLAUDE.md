@@ -38,7 +38,15 @@ make install         # Install with go install to GOBIN or Go's default bin dire
 make clean           # Remove build and coverage artifacts
 ```
 
-`goreleaser check` exits non-zero only because the accepted Homebrew formula uses GoReleaser's deprecated `brews` field. Snapshot releases remain valid and are the release check until the project can ship a signed, notarized cask and migrate the tap at the same time.
+## Release Validation
+
+`goreleaser check` exits 2 only because the accepted Homebrew formula uses GoReleaser's deprecated `brews` field. Until the project can ship a signed, notarized cask and migrate the tap at the same time, use the passing snapshot command:
+
+```bash
+goreleaser release --snapshot --clean
+```
+
+The snapshot command replaces `dist/` with generated release archives, checksums, metadata, binaries, and a Homebrew formula. It does not publish them.
 
 ## Conventions
 
