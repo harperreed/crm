@@ -19,8 +19,9 @@
 - Task 2: accepted in `8f9bea2` and `7bc4a95`; the later commit records Doctor Biz's authoritative decision to retain formula distribution.
 - Task 3: accepted in `430166d`.
 - Task 4: accepted in `9d1fe1e`, `b70ec7e`, and `7e116ea`.
-- Task 5: implemented in `19b736d`; quality-review reconciliation is in progress.
-- Task 6: pending.
+- Task 5: accepted in `19b736d` and `fe6f54c`.
+- Task 6: accepted in `0ac6ce4`; the full verification matrix passed and `/dist/` release-artifact hygiene was fixed.
+- Whole-change and final branch review: pending.
 
 ---
 
@@ -410,7 +411,7 @@ Do not bypass hooks.
 
 ### Task 5: Correct contributor docs and shared memory
 
-**Status:** Implemented and in quality review. Source, hook, release-snapshot, and false-claim checks pass; quality acceptance is pending this reconciliation.
+**Status:** Accepted in `19b736d` and `fe6f54c` after source, hook, release-snapshot, false-claim, and quality checks.
 
 **Files:**
 
@@ -530,6 +531,10 @@ git commit -m "docs: align contributor guidance with CRM"
 Do not bypass hooks.
 
 ### Task 6: Run full release and repository verification
+
+**Status:** Accepted in `0ac6ce4`. Whole-change and final branch review remain pending.
+
+**Verification outcome:** `make check`, `go vet ./...`, `go test -race ./...`, the snapshot release, both real-binary version paths, and diff checks passed. `goreleaser check` produced the sole expected exit 2 for deprecated `brews`; module hashes stayed unchanged. The snapshot inventory contained four target archives, the generated Homebrew formula, README files in every archive, and checksums. Generated `crm` and `dist/` output was cleaned, and `/dist/` is now ignored.
 
 **Files:**
 
