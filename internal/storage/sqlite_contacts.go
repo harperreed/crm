@@ -92,7 +92,7 @@ func (s *SqliteStore) ListContacts(filter *ContactFilter) ([]*models.Contact, er
 	}
 
 	if len(clauses) > 0 {
-		query += " WHERE " + strings.Join(clauses, " AND ")
+		query += " WHERE " + strings.Join(clauses, " AND ") // #nosec G202 -- clauses are fixed SQL; filter values remain parameterized.
 	}
 
 	query += " ORDER BY created_at DESC"
