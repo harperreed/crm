@@ -1,0 +1,119 @@
+<!-- ABOUTME: User guide for installing, configuring, and operating CRM. -->
+<!-- ABOUTME: Documents the CLI, storage backends, MCP server, and development checks. -->
+
+# CRM
+
+CRM is a small local-first relationship manager for contacts, companies, and the links between them. Humans use its command-line interface; agents use the same data through its MCP server.
+
+## Install
+
+With Homebrew:
+
+```bash
+brew install harperreed/tap/crm
+```
+
+With Go 1.25.5 or newer:
+
+```bash
+go install github.com/harperreed/crm/cmd/crm@latest
+```
+
+Check the installed build with either public version entry point:
+
+```bash
+crm --version
+crm version
+```
+
+## Use the CLI
+
+Add and inspect a contact:
+
+```bash
+crm contact add "Jane Doe" \
+  --email jane@example.com \
+  --phone +1-555-0123 \
+  --tag engineering \
+  --field title="VP Engineering"
+crm contact list --tag engineering
+crm contact show <contact-id-or-prefix>
+```
+
+Add a company and connect it to the contact:
+
+```bash
+crm company add "Acme Corp" --domain acme.com --tag customer
+crm link <contact-id-or-prefix> <company-id-or-prefix> \
+  --type works_at \
+  --context "VP Engineering"
+```
+
+Contacts and companies support `add`, `list`, `show`, `edit`, and `rm`. List commands accept `--tag`, `--search`, and `--limit`. IDs shown by the CLI may be shortened to a unique prefix of at least six characters.
+
+Run `crm help`, `crm contact --help`, or `crm company --help` for the full command reference.
+
+## Configure storage
+
+CRM uses SQLite by default. With no overrides, it stores the database at:
+
+```text
+~/.local/share/crm/crm.db
+```
+
+`$XDG_DATA_HOME/crm/crm.db` takes precedence when `XDG_DATA_HOME` is set.
+
+Configuration is optional. CRM reads JSON from `$XDG_CONFIG_HOME/crm/config.json`, or `~/.config/crm/config.json` when `XDG_CONFIG_HOME` is unset:
+
+```json
+{
+  "backend": "markdown",
+  "data_dir": "~/.local/share/crm"
+}
+```
+
+`backend` accepts `sqlite` or `markdown`. `data_dir` overrides the normal XDG data directory. The Markdown backend writes contacts and companies as Markdown files with YAML frontmatter and stores links in `_relationships.yaml`.
+
+## Connect an MCP client
+
+Start the stdio server with:
+
+```bash
+crm mcp
+```
+
+Claude Code project configuration:
+
+```json
+{
+  "mcpServers": {
+    "crm": {
+      "command": "crm",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+The server exposes 12 tools for contact and company CRUD plus linking and unlinking. It also exposes contact and company resource templates and three prompts for contact creation, relationship mapping, and cross-entity search.
+
+Install the bundled Claude Code skill with:
+
+```bash
+crm install-skill
+```
+
+This writes the skill to `~/.claude/skills/crm/SKILL.md`.
+
+## Develop
+
+```bash
+make build          # Build ./crm
+make test           # Run unit and integration tests
+make test-race      # Run tests with the race detector
+make lint           # Run golangci-lint
+make check          # Format, lint, and test
+goreleaser check    # Validate release configuration
+```
+
+The project uses Go 1.25.5. SQLite uses the pure-Go `modernc.org/sqlite` driver, so release builds do not require CGO.
