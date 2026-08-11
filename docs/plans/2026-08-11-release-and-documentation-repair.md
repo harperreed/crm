@@ -21,7 +21,7 @@
 - Task 4: accepted in `9d1fe1e`, `b70ec7e`, and `7e116ea`.
 - Task 5: accepted in `19b736d` and `fe6f54c`.
 - Task 6: accepted in `0ac6ce4`; the full verification matrix passed and `/dist/` release-artifact hygiene was fixed.
-- Whole-change and final branch review: pending.
+- Whole-change review and mandatory fresh-eyes review: accepted at `ed36e62` with no findings.
 
 ---
 
@@ -532,9 +532,9 @@ Do not bypass hooks.
 
 ### Task 6: Run full release and repository verification
 
-**Status:** Accepted in `0ac6ce4`. Whole-change and final branch review remain pending.
+**Status:** Accepted in `0ac6ce4`. Whole-change and mandatory fresh-eyes reviews passed at `ed36e62` with no findings.
 
-**Verification outcome:** `make check`, `go vet ./...`, `go test -race ./...`, the snapshot release, both real-binary version paths, and diff checks passed. `goreleaser check` produced the sole expected exit 2 for deprecated `brews`; module hashes stayed unchanged. The snapshot inventory contained four target archives, the generated Homebrew formula, README files in every archive, and checksums. Generated `crm` and `dist/` output was cleaned, and `/dist/` is now ignored.
+**Verification outcome:** `make check`, `go vet ./...`, `go test -race ./...`, the snapshot release, both real-binary version paths, and diff checks passed. `goreleaser check` produced the sole expected exit 2 for deprecated `brews`; module hashes stayed unchanged. The snapshot inventory contained four target archives, the generated Homebrew formula, README files in every archive, and checksums. Generated `crm` and `dist/` output was cleaned, and `/dist/` is now ignored. Whole-change and fresh-eyes reviewers found no critical, important, or minor issues.
 
 **Files:**
 
