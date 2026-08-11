@@ -25,24 +25,21 @@ builds:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
-      - LICENSE*
       - README*
 
-brews:
+homebrew_casks:
   - repository:
       owner: harperreed
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
     homepage: "https://github.com/harperreed/crm"
     description: "Lightweight CRM with MCP server and CLI for contacts, companies, and relationships"
-    install: |
-      bin.install "crm"
-    test: |
-      system "#{bin}/crm", "--version"
+    binaries:
+      - crm
 
 changelog:
   sort: asc
