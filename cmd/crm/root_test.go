@@ -6,25 +6,51 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
 func TestRootVersionFlag(t *testing.T) {
 	var output bytes.Buffer
-	previousOutput := rootCmd.OutOrStdout()
+	var errorOutput bytes.Buffer
+	tempDir := t.TempDir()
+	configHome := filepath.Join(tempDir, "config")
+	dataHome := filepath.Join(tempDir, "data")
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("XDG_DATA_HOME", dataHome)
 	rootCmd.SetArgs([]string{"--version"})
 	rootCmd.SetOut(&output)
+	rootCmd.SetErr(&errorOutput)
 	t.Cleanup(func() {
 		rootCmd.SetArgs(nil)
-		rootCmd.SetOut(previousOutput)
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+		versionFlag := rootCmd.Flags().Lookup("version")
+		if versionFlag == nil {
+			t.Error("version flag missing during cleanup")
+			return
+		}
+		if err := versionFlag.Value.Set("false"); err != nil {
+			t.Errorf("reset version flag: %v", err)
+		}
+		versionFlag.Changed = false
 	})
 
 	if err := Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+		t.Errorf("Execute() error = %v", err)
 	}
 
 	want := fmt.Sprintf("crm version %s\n", version)
 	if got := output.String(); got != want {
-		t.Fatalf("output = %q, want %q", got, want)
+		t.Errorf("output = %q, want %q", got, want)
+	}
+	if got := errorOutput.String(); got != "" {
+		t.Errorf("error output = %q, want empty", got)
+	}
+	for _, path := range []string{configHome, dataHome} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("os.Stat(%q) error = %v, want path not to exist", path, err)
+		}
 	}
 }
