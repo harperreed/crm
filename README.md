@@ -16,7 +16,9 @@ brew install harperreed/tap/crm
 With Go 1.25.5 or newer:
 
 ```bash
-go install github.com/harperreed/crm/cmd/crm@latest
+git clone https://github.com/harperreed/crm.git
+cd crm
+make install
 ```
 
 Check the installed build with either public version entry point:
