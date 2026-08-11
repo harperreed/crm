@@ -4,3 +4,4 @@ coverage.out
 *.db
 .private-journal/
 .scratch/
+.worktrees/
