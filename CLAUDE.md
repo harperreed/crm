@@ -1,49 +1,61 @@
+<!-- ABOUTME: Contributor guide for the CRM codebase and its canonical development commands. -->
+<!-- ABOUTME: Summarizes project structure, storage conventions, dependencies, and checks. -->
+
 # CRM Project
 
 ## Overview
 
-A lightweight CRM for contacts, companies, and relationships. Accessible via CLI and MCP.
+CRM is a lightweight manager for contacts, companies, and relationships. Humans use the CLI; agents use the MCP server. See `README.md` for installation and usage.
 
 ## Project Structure
 
-```
+```text
 crm/
 ├── cmd/crm/         # CLI entry point and Cobra commands
 ├── internal/
-│   ├── models/      # Data types (Contact, Company, Relationship)
-│   ├── storage/     # Storage interface and implementations (SQLite, Markdown)
-│   ├── mcp/         # MCP server, tools, resources, prompts
+│   ├── models/      # Contact, Company, and Relationship types
+│   ├── storage/     # Storage interface plus SQLite and Markdown backends
+│   ├── mcp/         # MCP tools, resource templates, and prompts
 │   └── config/      # XDG config and backend factory
+├── test/            # Cross-backend integration tests
+├── README.md
 ├── go.mod
 ├── Makefile
 └── CLAUDE.md
 ```
 
-## Build & Test
+## Build and Test
 
 ```bash
-make build           # Build binary
+make build           # Build ./crm
 make test            # Run tests
-make test-race       # Run tests with race detector
-make test-coverage   # Generate coverage report
+make test-race       # Run tests with the race detector
+make test-coverage   # Generate coverage.out and coverage.html
 make lint            # Run golangci-lint
-make fmt             # Format code
-make check           # fmt + lint + test
-make install         # Install to GOPATH/bin
-make clean           # Remove artifacts
+make fmt             # Format Go code
+make check           # Format, lint, and test
+make install         # Install with go install to GOBIN or Go's default bin directory
+make clean           # Remove build and coverage artifacts
 ```
 
-## Code Conventions
+`goreleaser check` exits non-zero only because the accepted Homebrew formula uses GoReleaser's deprecated `brews` field. Snapshot releases remain valid and are the release check until the project can ship a signed, notarized cask and migrate the tap at the same time.
 
-- All code files start with two `// ABOUTME:` comment lines describing the file.
-- Module path: `github.com/harperreed/crm`
-- Binary name: `crm`
-- Storage backend: SQLite via `mattn/go-sqlite3` with `XDG_DATA_HOME/crm/crm.db` default.
-- CLI framework: `github.com/spf13/cobra`
-- Pre-commit hooks enforce formatting, linting, and tests.
+## Conventions
 
-## Dependencies
+- Hand-written Go files start with two `// ABOUTME:` lines.
+- The module path is `github.com/harperreed/crm`; the binary name is `crm`.
+- SQLite is the default backend and uses `modernc.org/sqlite`.
+- The default database is `$XDG_DATA_HOME/crm/crm.db` when set, otherwise `~/.local/share/crm/crm.db`.
+- `internal/config` and `internal/storage` handle XDG paths directly.
+- Cobra provides the CLI. `crm --version` and `crm version` are both public.
+- Pre-commit hooks enforce formatting, linting, tests, and vet for applicable files.
 
-- `github.com/spf13/cobra` - CLI framework
-- `github.com/mattn/go-sqlite3` - SQLite driver
-- `github.com/adrg/xdg` - XDG directory paths
+## Direct Dependencies
+
+- `github.com/fatih/color` — terminal output
+- `github.com/google/uuid` — entity IDs
+- `github.com/harperreed/mdstore` — Markdown file operations
+- `github.com/modelcontextprotocol/go-sdk` — MCP server
+- `github.com/spf13/cobra` — CLI framework
+- `gopkg.in/yaml.v3` — YAML encoding
+- `modernc.org/sqlite` — pure-Go SQLite driver

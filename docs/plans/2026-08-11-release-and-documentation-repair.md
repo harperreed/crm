@@ -5,17 +5,28 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Make release checks clean, support both version entry points, and replace stale or missing user documentation with current guidance.
+**Goal:** Keep release snapshots viable, support both version entry points, and replace stale or missing user documentation with current guidance.
 
-**Architecture:** Keep the existing Cobra command tree and storage behavior intact. Enable Cobra's native version flag from the existing linker-injected version variable, migrate GoReleaser in place to its current archive and Homebrew cask schema, annotate two verified static-analysis false positives at their exact lines, and make README/CLAUDE/gotchas read from current code as the source of truth.
+**Architecture:** Keep the existing Cobra command tree and storage behavior intact. Enable Cobra's native version flag from the existing linker-injected version variable, update the GoReleaser archive schema while retaining formula publishing, annotate two verified static-analysis false positives at their exact lines, and make README/CLAUDE/gotchas read from current code as the source of truth. The formula's deprecated `brews` field stays until the project can ship a signed, notarized cask and coordinate its migration with `harperreed/homebrew-tap`.
 
 **Tech Stack:** Go 1.25.5, Cobra, GitHub Actions, GoReleaser 2.17, golangci-lint/gosec, Markdown.
 
 **Estimated change:** About 25 lines of Go and tests, 15 lines of release/CI YAML, and 140–180 lines of documentation.
 
+## Execution State
+
+- Task 1: accepted in `0c5a61d` and `3bba25e`.
+- Task 2: accepted in `8f9bea2` and `7bc4a95`; the later commit records Doctor Biz's authoritative decision to retain formula distribution.
+- Task 3: accepted in `430166d`.
+- Task 4: accepted in `9d1fe1e`, `b70ec7e`, and `7e116ea`.
+- Task 5: accepted; contributor guidance and durable project memory now match those results.
+- Task 6: pending.
+
 ---
 
 ### Task 1: Support `crm --version`
+
+**Status:** Accepted.
 
 **Files:**
 
@@ -129,69 +140,49 @@ git commit -m "feat: support version flag"
 
 Do not bypass hooks.
 
-### Task 2: Migrate GoReleaser to archives and Homebrew casks
+### Task 2: Update archives and retain Homebrew formulas
+
+**Status:** Accepted with a product decision that supersedes the original cask migration in this plan and design.
 
 **Files:**
 
-- Modify: `.goreleaser.yml:27-45`
+- Modify: `.goreleaser.yml:27-49`
 
-**Step 1: Reproduce the current schema failure**
+**Step 1: Reproduce the schema failures**
 
-Run:
+The original configuration made `goreleaser check` exit 2 with deprecations for `archives.format` and `brews`.
 
-```bash
-goreleaser check
-```
+**Step 2: Update only the archive schema**
 
-Expected: exit 2 with deprecations for `archives.format` and `brews`.
+Replace deprecated `archives.format` with `archives.formats`. Keep the `brews` formula configuration, its `Formula` directory, install block, and `crm --version` test. The archive retains both `LICENSE*` and `README*`.
 
-**Step 2: Replace the deprecated configuration**
+The unmatched `LICENSE*` glob remains a known release gotcha; choosing a license is outside this task.
 
-Replace the `archives` and `brews` sections with:
-
-```yaml
-archives:
-  - formats:
-      - tar.gz
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files:
-      - README*
-
-homebrew_casks:
-  - repository:
-      owner: harperreed
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: "https://github.com/harperreed/crm"
-    description: "Lightweight CRM with MCP server and CLI for contacts, companies, and relationships"
-    binaries:
-      - crm
-```
-
-Do not add `directory: Formula`, formula `install`/`test` blocks, or a license pattern.
-
-**Step 3: Verify GREEN against the installed schema**
+**Step 3: Verify the accepted release behavior**
 
 Run:
 
 ```bash
 goreleaser check
+goreleaser release --snapshot --clean
 ```
 
-Expected: exit 0 with no deprecation warning.
+Expected: `goreleaser check` exits 2 only for deprecated `brews`; the snapshot release exits 0 and generates the formula artifact without publishing it. This exception is deliberate. Migrating to `homebrew_casks` requires a signed, notarized binary and a coordinated tap migration, so it is not accepted work in this plan.
 
 **Step 4: Commit**
 
-Run `git status`, then:
+The final product-decision commit is:
 
 ```bash
 git add .goreleaser.yml
-git commit -m "fix: migrate release config to Homebrew cask"
+git commit -m "fix: retain Homebrew formula distribution"
 ```
 
 Do not bypass hooks.
 
 ### Task 3: Resolve the verified G202 false positives
+
+**Status:** Accepted.
 
 **Files:**
 
@@ -252,6 +243,8 @@ Do not bypass hooks.
 
 ### Task 4: Add the user README
 
+**Status:** Accepted, including follow-up corrections to installation and release caveats.
+
 **Files:**
 
 - Create: `README.md`
@@ -273,14 +266,18 @@ CRM is a small local-first relationship manager for contacts, companies, and the
 With Homebrew:
 
 ```bash
-brew install --cask harperreed/tap/crm
+brew install harperreed/tap/crm
 ```
 
 With Go 1.25.5 or newer:
 
 ```bash
-go install github.com/harperreed/crm/cmd/crm@latest
+git clone https://github.com/harperreed/crm.git
+cd crm
+make install
 ```
+
+Source installs do not use GoReleaser's linker flags, so `crm --version` reports `dev`.
 
 Check the installed build with either public version entry point:
 
@@ -345,7 +342,7 @@ Start the stdio server with:
 crm mcp
 ```
 
-Claude Code project configuration:
+For project-scoped Claude Code setup, save this configuration as `.mcp.json` in the project root:
 
 ```json
 {
@@ -362,6 +359,8 @@ The server exposes 12 tools for contact and company CRUD plus linking and unlink
 
 Install the bundled Claude Code skill with:
 
+Warning: this command overwrites an existing `~/.claude/skills/crm/SKILL.md` without a backup.
+
 ```bash
 crm install-skill
 ```
@@ -376,8 +375,9 @@ make test           # Run unit and integration tests
 make test-race      # Run tests with the race detector
 make lint           # Run golangci-lint
 make check          # Format, lint, and test
-goreleaser check    # Validate release configuration
 ```
+
+`goreleaser check` currently exits non-zero only because the accepted Homebrew formula configuration uses the deprecated `brews` field.
 
 The project uses Go 1.25.5. SQLite uses the pure-Go `modernc.org/sqlite` driver, so release builds do not require CGO.
 ````
@@ -410,10 +410,13 @@ Do not bypass hooks.
 
 ### Task 5: Correct contributor docs and shared memory
 
+**Status:** Accepted after source, hook, release-snapshot, and false-claim checks.
+
 **Files:**
 
 - Modify: `CLAUDE.md:1-49`
 - Modify: `gotchas.md:1-5`
+- Modify: `docs/plans/2026-08-11-release-and-documentation-repair.md`
 
 **Step 1: Replace stale contributor guidance**
 
@@ -456,10 +459,11 @@ make test-coverage   # Generate coverage.out and coverage.html
 make lint            # Run golangci-lint
 make fmt             # Format Go code
 make check           # Format, lint, and test
-make install         # Install with go install to the configured Go bin directory
+make install         # Install with go install to GOBIN or Go's default bin directory
 make clean           # Remove build and coverage artifacts
-goreleaser check     # Validate release configuration
 ```
+
+`goreleaser check` exits non-zero only because the accepted Homebrew formula uses GoReleaser's deprecated `brews` field. Snapshot releases remain valid and are the release check until the project can ship a signed, notarized cask and migrate the tap at the same time.
 
 ## Conventions
 
@@ -491,7 +495,9 @@ Replace `gotchas.md` with:
 # Project gotchas
 
 - `crm --version` and `crm version` are both public contracts; CI must exercise both.
-- GoReleaser publishes CRM as a Homebrew cask in `harperreed/homebrew-tap`, not as a generated binary formula.
+- CRM still publishes a generated Homebrew formula through `harperreed/homebrew-tap`. Keep the deprecated GoReleaser `brews` field until a signed, notarized cask and coordinated tap migration are ready; `goreleaser check` exits 2 for this deprecation, but snapshot releases succeed.
+- The release archive still includes an unmatched `LICENSE*` glob. Do not add or choose a license as a side effect of release maintenance.
+- `go install github.com/harperreed/crm/cmd/crm@latest` resolves `v1.5.1`, which does not contain `cmd/crm`; the repository's `v2.0.0` tag is not valid for a module path without `/v2`. Use the README's clone-and-`make install` flow until the module tags are repaired.
 - The SQLite list-query builders concatenate only fixed SQL clause strings. Filter values remain parameterized; keep the two G202 annotations narrow and justified.
 ```
 
@@ -500,17 +506,23 @@ Replace `gotchas.md` with:
 Run:
 
 ```bash
-rg -n 'mattn/go-sqlite3|adrg/xdg|Install to GOPATH/bin|LICENSE\*|^brews:|format: tar\.gz' README.md CLAUDE.md gotchas.md .goreleaser.yml
+rg -n 'mattn/go-sqlite3|adrg/xdg|Install to GOPATH/bin|Homebrew cask in|format: tar\.gz' README.md CLAUDE.md gotchas.md .goreleaser.yml
 ```
 
 Expected: no matches.
+
+Then verify the two accepted release exceptions remain documented and configured:
+
+```bash
+rg -n 'LICENSE\*|^brews:|goreleaser check' README.md CLAUDE.md gotchas.md .goreleaser.yml
+```
 
 **Step 4: Commit**
 
 Run `git status`, then:
 
 ```bash
-git add CLAUDE.md gotchas.md
+git add CLAUDE.md gotchas.md docs/plans/2026-08-11-release-and-documentation-repair.md
 git commit -m "docs: align contributor guidance with CRM"
 ```
 
@@ -533,7 +545,7 @@ go test -race ./...
 goreleaser check
 ```
 
-Expected: every command exits 0 with no warnings or errors.
+Expected: `make check`, vet, and race tests exit 0 with no warnings or errors. `goreleaser check` exits 2 only for the accepted deprecated `brews` field; any other finding fails verification.
 
 **Step 2: Build a snapshot release**
 
@@ -549,7 +561,7 @@ Run:
 goreleaser release --snapshot --clean
 ```
 
-Expected: exit 0; four macOS/Linux AMD64/ARM64 archives are built and a Homebrew cask artifact is generated without publishing.
+Expected: exit 0; four macOS/Linux AMD64/ARM64 archives and the Homebrew formula artifact are built without publishing.
 
 Inspect the artifact inventory:
 
