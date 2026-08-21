@@ -10,6 +10,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/storage"
 )
 
@@ -18,7 +19,7 @@ func newTestStore(t *testing.T) storage.Storage {
 	t.Helper()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
-	store, err := storage.NewSqliteStore(dbPath)
+	store, err := storage.NewSqliteStore(dbPath, history.SourceMCP)
 	if err != nil {
 		t.Fatalf("NewSqliteStore(%q): %v", dbPath, err)
 	}

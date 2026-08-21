@@ -7,14 +7,45 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/harperreed/crm/internal/history"
 )
+
+func TestSqliteStoreRetainsHistorySource(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "history-source.db")
+	store, err := NewSqliteStore(dbPath, history.SourceMCP)
+	if err != nil {
+		t.Fatalf("NewSqliteStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	if store.source != history.SourceMCP {
+		t.Fatalf("source = %q, want %q", store.source, history.SourceMCP)
+	}
+	if store.now == nil {
+		t.Fatal("now = nil")
+	}
+	if store.now().Before(time.Now().Add(-time.Minute)) {
+		t.Fatal("now returned a stale time")
+	}
+}
+
+func TestNewSqliteStoreRejectsInvalidHistorySource(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "invalid-source.db")
+	store, err := NewSqliteStore(dbPath, history.Source("web"))
+	if err == nil {
+		_ = store.Close()
+		t.Fatal("NewSqliteStore() error = nil")
+	}
+}
 
 // newTestStore creates a SqliteStore in a temp directory and registers cleanup.
 func newTestStore(t *testing.T) *SqliteStore {
 	t.Helper()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
-	store, err := NewSqliteStore(dbPath)
+	store, err := NewSqliteStore(dbPath, history.SourceCLI)
 	if err != nil {
 		t.Fatalf("NewSqliteStore(%q): %v", dbPath, err)
 	}
@@ -26,7 +57,7 @@ func TestNewSqliteStore(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "sub", "dir", "test.db")
 
-	store, err := NewSqliteStore(dbPath)
+	store, err := NewSqliteStore(dbPath, history.SourceCLI)
 	if err != nil {
 		t.Fatalf("NewSqliteStore: %v", err)
 	}

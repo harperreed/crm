@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/storage"
 )
 
@@ -49,13 +50,13 @@ func ExpandPath(path string) string {
 
 // OpenStorage creates and returns a Storage implementation based on the
 // configured backend.
-func (c *Config) OpenStorage() (storage.Storage, error) {
+func (c *Config) OpenStorage(source history.Source) (storage.Storage, error) {
 	switch c.GetBackend() {
 	case "sqlite":
 		dbPath := filepath.Join(c.GetDataDir(), "crm.db")
-		return storage.NewSqliteStore(dbPath)
+		return storage.NewSqliteStore(dbPath, source)
 	case "markdown":
-		return storage.NewMarkdownStore(c.GetDataDir())
+		return storage.NewMarkdownStore(c.GetDataDir(), source)
 	default:
 		return nil, fmt.Errorf("unknown storage backend: %q", c.GetBackend())
 	}

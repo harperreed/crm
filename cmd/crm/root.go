@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/harperreed/crm/internal/config"
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/storage"
 	"github.com/spf13/cobra"
 )
@@ -27,7 +28,7 @@ var rootCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
-		s, err := cfg.OpenStorage()
+		s, err := cfg.OpenStorage(historySourceForCommand(cmd))
 		if err != nil {
 			return fmt.Errorf("open storage: %w", err)
 		}
@@ -40,6 +41,13 @@ var rootCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func historySourceForCommand(cmd *cobra.Command) history.Source {
+	if cmd.Name() == "mcp" {
+		return history.SourceMCP
+	}
+	return history.SourceCLI
 }
 
 // Execute runs the root command.

@@ -9,7 +9,28 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/harperreed/crm/internal/history"
+	"github.com/spf13/cobra"
 )
+
+func TestHistorySourceForCommand(t *testing.T) {
+	tests := []struct {
+		name string
+		want history.Source
+	}{
+		{name: "mcp", want: history.SourceMCP},
+		{name: "contact", want: history.SourceCLI},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &cobra.Command{Use: tt.name}
+			if got := historySourceForCommand(cmd); got != tt.want {
+				t.Fatalf("historySourceForCommand(%q) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestRootVersionFlag(t *testing.T) {
 	var output bytes.Buffer

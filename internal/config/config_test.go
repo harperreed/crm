@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/harperreed/crm/internal/history"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -67,7 +69,7 @@ func TestOpenStorageSqlite(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &Config{Backend: "sqlite", DataDir: dir}
 
-	s, err := cfg.OpenStorage()
+	s, err := cfg.OpenStorage(history.SourceCLI)
 	if err != nil {
 		t.Fatalf("OpenStorage: %v", err)
 	}
@@ -83,7 +85,7 @@ func TestOpenStorageSqlite(t *testing.T) {
 func TestOpenStorageUnknown(t *testing.T) {
 	cfg := &Config{Backend: "nosql"}
 
-	_, err := cfg.OpenStorage()
+	_, err := cfg.OpenStorage(history.SourceCLI)
 	if err == nil {
 		t.Fatal("expected error for unknown backend, got nil")
 	}

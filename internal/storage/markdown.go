@@ -5,7 +5,9 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/mdstore"
 )
 
@@ -15,21 +17,28 @@ var _ Storage = (*MarkdownStore)(nil)
 // MarkdownStore implements Storage using markdown files on disk.
 type MarkdownStore struct {
 	dataDir string
+	source  history.Source
+	now     func() time.Time
 }
 
 // NewMarkdownStore creates a new MarkdownStore backed by the given directory.
-// It creates the dataDir, contacts/, and companies/ subdirectories if needed.
-func NewMarkdownStore(dataDir string) (*MarkdownStore, error) {
+// It creates the data and committed-history subdirectories if needed.
+func NewMarkdownStore(dataDir string, source history.Source) (*MarkdownStore, error) {
+	if err := validateHistorySource(source); err != nil {
+		return nil, err
+	}
 	for _, dir := range []string{
 		dataDir,
 		filepath.Join(dataDir, "contacts"),
 		filepath.Join(dataDir, "companies"),
+		filepath.Join(dataDir, "_history", "events"),
+		filepath.Join(dataDir, "_history", "pending"),
 	} {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return nil, err
 		}
 	}
-	return &MarkdownStore{dataDir: dataDir}, nil
+	return &MarkdownStore{dataDir: dataDir, source: source, now: time.Now}, nil
 }
 
 // Close is a no-op for the file-based backend.

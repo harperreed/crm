@@ -8,6 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/harperreed/crm/internal/history"
 
 	_ "modernc.org/sqlite"
 )
@@ -16,6 +19,8 @@ import (
 type SqliteStore struct {
 	db     *sql.DB
 	dbPath string
+	source history.Source
+	now    func() time.Time
 }
 
 // Compile-time check that SqliteStore satisfies the Storage interface.
@@ -23,7 +28,10 @@ var _ Storage = (*SqliteStore)(nil)
 
 // NewSqliteStore creates a new SqliteStore, ensuring parent directories exist,
 // opening the database with foreign keys and WAL mode, and initializing the schema.
-func NewSqliteStore(dbPath string) (*SqliteStore, error) {
+func NewSqliteStore(dbPath string, source history.Source) (*SqliteStore, error) {
+	if err := validateHistorySource(source); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o750); err != nil {
 		return nil, fmt.Errorf("create parent dirs: %w", err)
 	}
@@ -39,7 +47,7 @@ func NewSqliteStore(dbPath string) (*SqliteStore, error) {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
-	store := &SqliteStore{db: db, dbPath: dbPath}
+	store := &SqliteStore{db: db, dbPath: dbPath, source: source, now: time.Now}
 	if err := store.initSchema(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
@@ -99,10 +107,29 @@ func tableStatements() []string {
 			context TEXT DEFAULT '',
 			created_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS history_events (
+			id TEXT PRIMARY KEY,
+			schema_version INTEGER NOT NULL,
+			entity_type TEXT NOT NULL,
+			entity_id TEXT NOT NULL,
+			action TEXT NOT NULL,
+			source TEXT NOT NULL,
+			occurred_at DATETIME NOT NULL,
+			before_json TEXT,
+			after_json TEXT
+		)`,
+		`CREATE TABLE IF NOT EXISTS history_event_entities (
+			event_id TEXT NOT NULL,
+			entity_id TEXT NOT NULL,
+			PRIMARY KEY (event_id, entity_id),
+			FOREIGN KEY (event_id) REFERENCES history_events(id)
+		)`,
 		`CREATE INDEX IF NOT EXISTS idx_contacts_id ON contacts(id)`,
 		`CREATE INDEX IF NOT EXISTS idx_companies_id ON companies(id)`,
 		`CREATE INDEX IF NOT EXISTS idx_relationships_source_id ON relationships(source_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_relationships_target_id ON relationships(target_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_history_event_entities_entity_id ON history_event_entities(entity_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_history_events_occurred_at ON history_events(occurred_at)`,
 	}
 }
 

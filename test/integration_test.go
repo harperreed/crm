@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/harperreed/crm/internal/config"
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/models"
 	"github.com/harperreed/crm/internal/storage"
 )
@@ -157,7 +158,7 @@ func TestFullWorkflow(t *testing.T) {
 			tmpDir := t.TempDir()
 			cfg := &config.Config{Backend: backend, DataDir: tmpDir}
 
-			store, err := cfg.OpenStorage()
+			store, err := cfg.OpenStorage(history.SourceCLI)
 			if err != nil {
 				t.Fatalf("OpenStorage(%s): %v", backend, err)
 			}
@@ -178,7 +179,7 @@ func TestConfigOpenStorageBothBackends(t *testing.T) {
 		dir := t.TempDir()
 		cfg := &config.Config{Backend: "sqlite", DataDir: dir}
 
-		store, err := cfg.OpenStorage()
+		store, err := cfg.OpenStorage(history.SourceCLI)
 		if err != nil {
 			t.Fatalf("OpenStorage(sqlite): %v", err)
 		}
@@ -195,7 +196,7 @@ func TestConfigOpenStorageBothBackends(t *testing.T) {
 		dir := t.TempDir()
 		cfg := &config.Config{Backend: "markdown", DataDir: dir}
 
-		store, err := cfg.OpenStorage()
+		store, err := cfg.OpenStorage(history.SourceCLI)
 		if err != nil {
 			t.Fatalf("OpenStorage(markdown): %v", err)
 		}

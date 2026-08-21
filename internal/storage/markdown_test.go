@@ -7,16 +7,43 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/models"
 )
+
+func TestMarkdownStoreRetainsHistorySource(t *testing.T) {
+	store, err := NewMarkdownStore(t.TempDir(), history.SourceMCP)
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+
+	if store.source != history.SourceMCP {
+		t.Fatalf("source = %q, want %q", store.source, history.SourceMCP)
+	}
+	if store.now == nil {
+		t.Fatal("now = nil")
+	}
+	if store.now().Before(time.Now().Add(-time.Minute)) {
+		t.Fatal("now returned a stale time")
+	}
+}
+
+func TestNewMarkdownStoreRejectsInvalidHistorySource(t *testing.T) {
+	store, err := NewMarkdownStore(t.TempDir(), history.Source("web"))
+	if err == nil {
+		_ = store.Close()
+		t.Fatal("NewMarkdownStore() error = nil")
+	}
+}
 
 // newTestMarkdownStore creates a MarkdownStore in a temp directory.
 func newTestMarkdownStore(t *testing.T) *MarkdownStore {
 	t.Helper()
 	tmpDir := t.TempDir()
-	store, err := NewMarkdownStore(tmpDir)
+	store, err := NewMarkdownStore(tmpDir, history.SourceCLI)
 	if err != nil {
 		t.Fatalf("NewMarkdownStore(%q): %v", tmpDir, err)
 	}
@@ -26,7 +53,7 @@ func newTestMarkdownStore(t *testing.T) *MarkdownStore {
 func TestMarkdownNewStore(t *testing.T) {
 	tmpDir := t.TempDir()
 	dataDir := filepath.Join(tmpDir, "sub", "data")
-	store, err := NewMarkdownStore(dataDir)
+	store, err := NewMarkdownStore(dataDir, history.SourceCLI)
 	if err != nil {
 		t.Fatalf("NewMarkdownStore: %v", err)
 	}

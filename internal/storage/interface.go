@@ -4,8 +4,10 @@ package storage
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/models"
 )
 
@@ -15,7 +17,17 @@ var (
 	ErrRelationshipNotFound = errors.New("relationship not found")
 	ErrPrefixTooShort       = errors.New("prefix must be at least 6 characters")
 	ErrAmbiguousPrefix      = errors.New("prefix matches multiple records")
+	ErrHistoryNotFound      = errors.New("history not found")
+	ErrHistoryConflict      = errors.New("history recovery conflict")
+	ErrHistoryCorrupt       = errors.New("history event is corrupt")
 )
+
+func validateHistorySource(source history.Source) error {
+	if source != history.SourceCLI && source != history.SourceMCP {
+		return fmt.Errorf("invalid history source %q", source)
+	}
+	return nil
+}
 
 // Storage defines the contract that all CRM data backends must satisfy.
 type Storage interface {
@@ -38,6 +50,8 @@ type Storage interface {
 	DeleteRelationship(id uuid.UUID) error
 
 	Search(query string) (*SearchResults, error)
+	ListHistory(entityIDOrPrefix string, limit int) ([]*history.Summary, error)
+	GetHistoryEvent(eventIDOrPrefix string) (*history.Event, error)
 
 	Close() error
 }
