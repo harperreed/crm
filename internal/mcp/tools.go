@@ -1,5 +1,5 @@
-// ABOUTME: MCP tool handlers for CRM CRUD operations on contacts, companies, and relationships.
-// ABOUTME: Defines 12 tools with JSON schema input validation and helper functions for results.
+// ABOUTME: MCP tool handlers for CRM CRUD and history operations.
+// ABOUTME: Defines 14 tools with JSON schema input validation and result helpers.
 package mcp
 
 import (
@@ -14,7 +14,7 @@ import (
 	"github.com/harperreed/crm/internal/storage"
 )
 
-// registerTools adds all 12 CRM tools to the MCP server.
+// registerTools adds all 14 CRM tools to the MCP server.
 func (s *Server) registerTools() {
 	s.server.AddTool(addContactTool(), s.handleAddContact)
 	s.server.AddTool(listContactsTool(), s.handleListContacts)
@@ -28,6 +28,8 @@ func (s *Server) registerTools() {
 	s.server.AddTool(deleteCompanyTool(), s.handleDeleteCompany)
 	s.server.AddTool(linkTool(), s.handleLink)
 	s.server.AddTool(unlinkTool(), s.handleUnlink)
+	s.server.AddTool(listHistoryTool(), s.handleListHistory)
+	s.server.AddTool(getHistoryEventTool(), s.handleGetHistoryEvent)
 }
 
 // --- result helpers ---

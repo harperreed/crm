@@ -75,7 +75,7 @@ func TestServerListTools(t *testing.T) {
 	expectedTools := []string{
 		"add_contact", "list_contacts", "get_contact", "update_contact", "delete_contact",
 		"add_company", "list_companies", "get_company", "update_company", "delete_company",
-		"link", "unlink",
+		"link", "unlink", "list_history", "get_history_event",
 	}
 
 	toolNames := make(map[string]bool)
