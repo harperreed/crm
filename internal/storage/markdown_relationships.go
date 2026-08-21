@@ -3,11 +3,15 @@
 package storage
 
 import (
+	"errors"
+	"fmt"
 	"os"
 
 	"github.com/google/uuid"
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/models"
 	"github.com/harperreed/mdstore"
+	"gopkg.in/yaml.v3"
 )
 
 // relationshipEntry is the YAML representation of a relationship in the list.
@@ -75,17 +79,38 @@ func (s *MarkdownStore) readRelationships() ([]relationshipEntry, error) {
 
 // writeRelationships writes the full relationships list to the YAML file.
 func (s *MarkdownStore) writeRelationships(entries []relationshipEntry) error {
-	return mdstore.WriteYAML(s.relationshipsFile(), entries)
+	data, err := yaml.Marshal(entries)
+	if err != nil {
+		return fmt.Errorf("marshal relationships: %w", err)
+	}
+	if err := mdstore.AtomicWrite(s.relationshipsFile(), data); err != nil {
+		return fmt.Errorf("write relationships: %w", err)
+	}
+	return syncMarkdownHistoryDirectory(s.dataDir)
 }
 
 // CreateRelationship appends a new relationship to the YAML file.
 func (s *MarkdownStore) CreateRelationship(rel *models.Relationship) error {
-	entries, err := s.readRelationships()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	after, err := markdownRelationshipSnapshot(rel)
 	if err != nil {
-		return err
+		return fmt.Errorf("snapshot relationship: %w", err)
 	}
-	entries = append(entries, relationshipToEntry(rel))
-	return s.writeRelationships(entries)
+	event, err := history.NewEvent(
+		history.EntityRelationship,
+		rel.ID,
+		[]uuid.UUID{rel.ID, rel.SourceID, rel.TargetID},
+		history.ActionCreate,
+		s.source,
+		nil,
+		after,
+		s.now(),
+	)
+	if err != nil {
+		return fmt.Errorf("create relationship history event: %w", err)
+	}
+	return s.commitHistoryEvent(event)
 }
 
 // ListRelationships returns all relationships where the given entity ID appears
@@ -112,22 +137,31 @@ func (s *MarkdownStore) ListRelationships(entityID uuid.UUID) ([]*models.Relatio
 // DeleteRelationship removes a relationship by its ID from the YAML file.
 // Returns ErrRelationshipNotFound if the ID does not exist.
 func (s *MarkdownStore) DeleteRelationship(id uuid.UUID) error {
-	entries, err := s.readRelationships()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	relationship, err := s.findRelationshipStrict(id)
+	if errors.Is(err, ErrRelationshipNotFound) {
+		return ErrRelationshipNotFound
+	}
 	if err != nil {
 		return err
 	}
-	idStr := id.String()
-	found := false
-	var remaining []relationshipEntry
-	for _, e := range entries {
-		if e.ID == idStr {
-			found = true
-			continue
-		}
-		remaining = append(remaining, e)
+	before, err := markdownRelationshipSnapshot(relationship)
+	if err != nil {
+		return fmt.Errorf("snapshot relationship: %w", err)
 	}
-	if !found {
-		return ErrRelationshipNotFound
+	event, err := history.NewEvent(
+		history.EntityRelationship,
+		id,
+		[]uuid.UUID{id, relationship.SourceID, relationship.TargetID},
+		history.ActionDelete,
+		s.source,
+		before,
+		nil,
+		s.now(),
+	)
+	if err != nil {
+		return fmt.Errorf("create relationship history event: %w", err)
 	}
-	return s.writeRelationships(remaining)
+	return s.commitHistoryEvent(event)
 }

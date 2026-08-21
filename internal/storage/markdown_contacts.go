@@ -3,12 +3,13 @@
 package storage
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/models"
 	"github.com/harperreed/mdstore"
 )
@@ -124,8 +125,26 @@ func (s *MarkdownStore) findContactFile(id uuid.UUID) (string, *models.Contact, 
 
 // CreateContact writes a new contact as a markdown file.
 func (s *MarkdownStore) CreateContact(contact *models.Contact) error {
-	filename := slugForName(contact.Name, contact.ID.String(), s.contactsDir())
-	return s.writeContact(contact, filename)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	after, err := markdownContactSnapshot(contact)
+	if err != nil {
+		return fmt.Errorf("snapshot contact: %w", err)
+	}
+	event, err := history.NewEvent(
+		history.EntityContact,
+		contact.ID,
+		[]uuid.UUID{contact.ID},
+		history.ActionCreate,
+		s.source,
+		nil,
+		after,
+		s.now(),
+	)
+	if err != nil {
+		return fmt.Errorf("create contact history event: %w", err)
+	}
+	return s.commitHistoryEvent(event)
 }
 
 // GetContact retrieves a contact by its UUID.
@@ -243,40 +262,86 @@ func contactMatchesSearch(c *models.Contact, query string) bool {
 // UpdateContact updates an existing contact. Returns ErrContactNotFound if
 // the contact does not exist.
 func (s *MarkdownStore) UpdateContact(contact *models.Contact) error {
-	path, existing, err := s.findContactFile(contact.ID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, existing, err := s.findContactFileStrict(contact.ID)
 	if err != nil {
 		return err
 	}
 	if existing == nil {
 		return ErrContactNotFound
 	}
-	// Preserve original created_at
-	if contact.CreatedAt.IsZero() {
-		contact.CreatedAt = existing.CreatedAt
+	before, err := markdownContactSnapshot(existing)
+	if err != nil {
+		return fmt.Errorf("snapshot current contact: %w", err)
 	}
-	if contact.UpdatedAt.IsZero() || contact.UpdatedAt.Before(existing.UpdatedAt) {
-		contact.UpdatedAt = time.Now()
+	candidate := *contact
+	candidate.CreatedAt = existing.CreatedAt
+	requestedUpdatedAt := candidate.UpdatedAt
+	candidate.UpdatedAt = existing.UpdatedAt
+	after, err := markdownContactSnapshot(&candidate)
+	if err != nil {
+		return fmt.Errorf("snapshot updated contact: %w", err)
 	}
-	// If name changed, we might need a new filename
-	filename := filepath.Base(path)
-	if existing.Name != contact.Name {
-		// Remove old file, write with new slug
-		if err := os.Remove(path); err != nil {
-			return err
-		}
-		filename = slugForName(contact.Name, contact.ID.String(), s.contactsDir())
+	changed, err := history.ChangedFields(history.EntityContact, before, after)
+	if err != nil {
+		return fmt.Errorf("compare contact snapshots: %w", err)
 	}
-	return s.writeContact(contact, filename)
+	if len(changed) == 0 {
+		return nil
+	}
+	if requestedUpdatedAt.IsZero() || requestedUpdatedAt.Before(existing.UpdatedAt) {
+		candidate.UpdatedAt = s.now()
+	} else {
+		candidate.UpdatedAt = requestedUpdatedAt
+	}
+	after, err = markdownContactSnapshot(&candidate)
+	if err != nil {
+		return fmt.Errorf("snapshot updated contact: %w", err)
+	}
+	event, err := history.NewEvent(
+		history.EntityContact,
+		contact.ID,
+		[]uuid.UUID{contact.ID},
+		history.ActionUpdate,
+		s.source,
+		before,
+		after,
+		s.now(),
+	)
+	if err != nil {
+		return fmt.Errorf("create contact history event: %w", err)
+	}
+	return s.commitHistoryEvent(event)
 }
 
 // DeleteContact removes the markdown file for the given contact ID.
 func (s *MarkdownStore) DeleteContact(id uuid.UUID) error {
-	path, c, err := s.findContactFile(id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, contact, err := s.findContactFileStrict(id)
 	if err != nil {
 		return err
 	}
-	if c == nil {
+	if contact == nil {
 		return ErrContactNotFound
 	}
-	return os.Remove(path)
+	before, err := markdownContactSnapshot(contact)
+	if err != nil {
+		return fmt.Errorf("snapshot contact: %w", err)
+	}
+	event, err := history.NewEvent(
+		history.EntityContact,
+		id,
+		[]uuid.UUID{id},
+		history.ActionDelete,
+		s.source,
+		before,
+		nil,
+		s.now(),
+	)
+	if err != nil {
+		return fmt.Errorf("create contact history event: %w", err)
+	}
+	return s.commitHistoryEvent(event)
 }

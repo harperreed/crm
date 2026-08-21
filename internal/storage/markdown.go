@@ -5,6 +5,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/harperreed/crm/internal/history"
@@ -19,6 +20,7 @@ type MarkdownStore struct {
 	dataDir string
 	source  history.Source
 	now     func() time.Time
+	mu      sync.Mutex
 }
 
 // NewMarkdownStore creates a new MarkdownStore backed by the given directory.
@@ -38,7 +40,11 @@ func NewMarkdownStore(dataDir string, source history.Source) (*MarkdownStore, er
 			return nil, err
 		}
 	}
-	return &MarkdownStore{dataDir: dataDir, source: source, now: time.Now}, nil
+	store := &MarkdownStore{dataDir: dataDir, source: source, now: time.Now}
+	if err := store.recoverPendingHistory(); err != nil {
+		return nil, err
+	}
+	return store, nil
 }
 
 // Close is a no-op for the file-based backend.

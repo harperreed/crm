@@ -3,12 +3,13 @@
 package storage
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/models"
 	"github.com/harperreed/mdstore"
 )
@@ -121,8 +122,26 @@ func (s *MarkdownStore) findCompanyFile(id uuid.UUID) (string, *models.Company, 
 
 // CreateCompany writes a new company as a markdown file.
 func (s *MarkdownStore) CreateCompany(company *models.Company) error {
-	filename := slugForName(company.Name, company.ID.String(), s.companiesDir())
-	return s.writeCompany(company, filename)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	after, err := markdownCompanySnapshot(company)
+	if err != nil {
+		return fmt.Errorf("snapshot company: %w", err)
+	}
+	event, err := history.NewEvent(
+		history.EntityCompany,
+		company.ID,
+		[]uuid.UUID{company.ID},
+		history.ActionCreate,
+		s.source,
+		nil,
+		after,
+		s.now(),
+	)
+	if err != nil {
+		return fmt.Errorf("create company history event: %w", err)
+	}
+	return s.commitHistoryEvent(event)
 }
 
 // GetCompany retrieves a company by its UUID.
@@ -237,39 +256,86 @@ func companyMatchesSearch(c *models.Company, query string) bool {
 // UpdateCompany updates an existing company. Returns ErrCompanyNotFound if
 // the company does not exist.
 func (s *MarkdownStore) UpdateCompany(company *models.Company) error {
-	path, existing, err := s.findCompanyFile(company.ID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, existing, err := s.findCompanyFileStrict(company.ID)
 	if err != nil {
 		return err
 	}
 	if existing == nil {
 		return ErrCompanyNotFound
 	}
-	// Preserve original created_at
-	if company.CreatedAt.IsZero() {
-		company.CreatedAt = existing.CreatedAt
+	before, err := markdownCompanySnapshot(existing)
+	if err != nil {
+		return fmt.Errorf("snapshot current company: %w", err)
 	}
-	if company.UpdatedAt.IsZero() || company.UpdatedAt.Before(existing.UpdatedAt) {
-		company.UpdatedAt = time.Now()
+	candidate := *company
+	candidate.CreatedAt = existing.CreatedAt
+	requestedUpdatedAt := candidate.UpdatedAt
+	candidate.UpdatedAt = existing.UpdatedAt
+	after, err := markdownCompanySnapshot(&candidate)
+	if err != nil {
+		return fmt.Errorf("snapshot updated company: %w", err)
 	}
-	// If name changed, we might need a new filename
-	filename := filepath.Base(path)
-	if existing.Name != company.Name {
-		if err := os.Remove(path); err != nil {
-			return err
-		}
-		filename = slugForName(company.Name, company.ID.String(), s.companiesDir())
+	changed, err := history.ChangedFields(history.EntityCompany, before, after)
+	if err != nil {
+		return fmt.Errorf("compare company snapshots: %w", err)
 	}
-	return s.writeCompany(company, filename)
+	if len(changed) == 0 {
+		return nil
+	}
+	if requestedUpdatedAt.IsZero() || requestedUpdatedAt.Before(existing.UpdatedAt) {
+		candidate.UpdatedAt = s.now()
+	} else {
+		candidate.UpdatedAt = requestedUpdatedAt
+	}
+	after, err = markdownCompanySnapshot(&candidate)
+	if err != nil {
+		return fmt.Errorf("snapshot updated company: %w", err)
+	}
+	event, err := history.NewEvent(
+		history.EntityCompany,
+		company.ID,
+		[]uuid.UUID{company.ID},
+		history.ActionUpdate,
+		s.source,
+		before,
+		after,
+		s.now(),
+	)
+	if err != nil {
+		return fmt.Errorf("create company history event: %w", err)
+	}
+	return s.commitHistoryEvent(event)
 }
 
 // DeleteCompany removes the markdown file for the given company ID.
 func (s *MarkdownStore) DeleteCompany(id uuid.UUID) error {
-	path, c, err := s.findCompanyFile(id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, company, err := s.findCompanyFileStrict(id)
 	if err != nil {
 		return err
 	}
-	if c == nil {
+	if company == nil {
 		return ErrCompanyNotFound
 	}
-	return os.Remove(path)
+	before, err := markdownCompanySnapshot(company)
+	if err != nil {
+		return fmt.Errorf("snapshot company: %w", err)
+	}
+	event, err := history.NewEvent(
+		history.EntityCompany,
+		id,
+		[]uuid.UUID{id},
+		history.ActionDelete,
+		s.source,
+		before,
+		nil,
+		s.now(),
+	)
+	if err != nil {
+		return fmt.Errorf("create company history event: %w", err)
+	}
+	return s.commitHistoryEvent(event)
 }
