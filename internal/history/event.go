@@ -85,8 +85,8 @@ func NewEvent(
 		Action:           action,
 		Source:           source,
 		OccurredAt:       occurredAt.UTC(),
-		Before:           before,
-		After:            after,
+		Before:           slices.Clone(before),
+		After:            slices.Clone(after),
 	}
 	if err := event.Validate(); err != nil {
 		return nil, err
@@ -110,9 +110,6 @@ func (e *Event) Validate() error {
 	if e.EntityID == uuid.Nil {
 		return errors.New("history entity ID is required")
 	}
-	if !slices.Contains(e.RelatedEntityIDs, e.EntityID) {
-		return errors.New("history related entity IDs must include the subject")
-	}
 	if !validAction(e.Action) {
 		return fmt.Errorf("invalid history action %q", e.Action)
 	}
@@ -124,6 +121,13 @@ func (e *Event) Validate() error {
 	}
 	if err := validateSnapshots(e.Action, e.Before, e.After); err != nil {
 		return err
+	}
+	expectedRelated, err := e.validateSnapshotSemantics()
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(e.RelatedEntityIDs, expectedRelated) {
+		return fmt.Errorf("history related entity IDs must equal %v", expectedRelated)
 	}
 	return nil
 }
@@ -192,6 +196,30 @@ func validateSnapshots(action Action, before, after json.RawMessage) error {
 		return errors.New("history after snapshot is invalid JSON")
 	}
 	return nil
+}
+
+func (e *Event) validateSnapshotSemantics() ([]uuid.UUID, error) {
+	var expectedRelated []uuid.UUID
+	for _, snapshot := range []json.RawMessage{e.Before, e.After} {
+		if isNullSnapshot(snapshot) {
+			continue
+		}
+		snapshotID, related, err := snapshotIdentityAndRelatedIDs(e.EntityType, snapshot)
+		if err != nil {
+			return nil, err
+		}
+		if snapshotID != e.EntityID {
+			return nil, fmt.Errorf("history snapshot ID %s does not match entity ID %s", snapshotID, e.EntityID)
+		}
+		if expectedRelated == nil {
+			expectedRelated = related
+			continue
+		}
+		if !slices.Equal(expectedRelated, related) {
+			return nil, errors.New("history before and after snapshots identify different related entities")
+		}
+	}
+	return expectedRelated, nil
 }
 
 func isNullSnapshot(snapshot json.RawMessage) bool {

@@ -209,6 +209,41 @@ func TestSnapshotErrors(t *testing.T) {
 	}
 }
 
+func TestSnapshotDecodersRejectStructurallyInvalidSnapshots(t *testing.T) {
+	valid := testContactSnapshot(t, uuid.MustParse("10000000-0000-0000-0000-000000000001"))
+	tests := []struct {
+		name     string
+		snapshot json.RawMessage
+	}{
+		{name: "empty object", snapshot: json.RawMessage(`{}`)},
+		{name: "unknown field", snapshot: snapshotWithField(t, valid, "nickname", "Ada")},
+		{name: "wrong entity shape", snapshot: testRelationshipSnapshot(t)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := ContactFromSnapshot(tt.snapshot); err == nil {
+				t.Fatal("ContactFromSnapshot() error = nil")
+			}
+		})
+	}
+}
+
+func TestEqualSnapshotsUsesStrictDecoder(t *testing.T) {
+	valid := testContactSnapshot(t, uuid.MustParse("10000000-0000-0000-0000-000000000001"))
+	unknownField := snapshotWithField(t, valid, "nickname", "Ada")
+	if _, err := EqualSnapshots(EntityContact, valid, unknownField); err == nil {
+		t.Fatal("EqualSnapshots() error = nil")
+	}
+}
+
+func TestChangedFieldsUsesStrictDecoder(t *testing.T) {
+	valid := testContactSnapshot(t, uuid.MustParse("10000000-0000-0000-0000-000000000001"))
+	unknownField := snapshotWithField(t, valid, "nickname", "Ada")
+	if _, err := ChangedFields(EntityContact, valid, unknownField); err == nil {
+		t.Fatal("ChangedFields() error = nil")
+	}
+}
+
 func TestEventSummary(t *testing.T) {
 	contact := &models.Contact{
 		ID:        uuid.MustParse("10000000-0000-0000-0000-000000000001"),

@@ -173,11 +173,11 @@ func ChangedFields(entityType EntityType, before, after json.RawMessage) ([]stri
 	if !validEntityType(entityType) {
 		return nil, fmt.Errorf("invalid history entity type %q", entityType)
 	}
-	beforeFields, err := snapshotObject(before)
+	beforeFields, err := strictSnapshotObject(entityType, before)
 	if err != nil {
 		return nil, fmt.Errorf("decode before snapshot: %w", err)
 	}
-	afterFields, err := snapshotObject(after)
+	afterFields, err := strictSnapshotObject(entityType, after)
 	if err != nil {
 		return nil, fmt.Errorf("decode after snapshot: %w", err)
 	}
@@ -233,10 +233,104 @@ func unmarshalSnapshot(snapshot json.RawMessage, destination any) error {
 	if isNullSnapshot(snapshot) {
 		return errors.New("history snapshot is null")
 	}
-	if err := json.Unmarshal(snapshot, destination); err != nil {
+	requiredKeys, err := snapshotKeys(destination)
+	if err != nil {
 		return err
 	}
+	if err := validateSnapshotKeys(snapshot, requiredKeys); err != nil {
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(snapshot))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	return validateSnapshotStructure(destination)
+}
+
+func snapshotKeys(destination any) ([]string, error) {
+	switch destination.(type) {
+	case *contactSnapshot:
+		return []string{"id", "name", "email", "phone", "fields", "tags", "created_at", "updated_at"}, nil
+	case *companySnapshot:
+		return []string{"id", "name", "domain", "fields", "tags", "created_at", "updated_at"}, nil
+	case *relationshipSnapshot:
+		return []string{"id", "source_id", "target_id", "type", "context", "created_at"}, nil
+	default:
+		return nil, fmt.Errorf("unsupported history snapshot destination %T", destination)
+	}
+}
+
+func validateSnapshotKeys(snapshot json.RawMessage, required []string) error {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(snapshot, &object); err != nil {
+		return err
+	}
+	if object == nil {
+		return errors.New("history snapshot must be a JSON object")
+	}
+	allowed := make(map[string]struct{}, len(required))
+	for _, key := range required {
+		allowed[key] = struct{}{}
+		if _, ok := object[key]; !ok {
+			return fmt.Errorf("history snapshot is missing field %q", key)
+		}
+	}
+	for key := range object {
+		if _, ok := allowed[key]; !ok {
+			return fmt.Errorf("history snapshot contains unknown field %q", key)
+		}
+	}
 	return nil
+}
+
+func validateSnapshotStructure(destination any) error {
+	switch snapshot := destination.(type) {
+	case *contactSnapshot:
+		if snapshot.ID == uuid.Nil || snapshot.CreatedAt.IsZero() || snapshot.UpdatedAt.IsZero() {
+			return errors.New("contact snapshot requires ID, created_at, and updated_at")
+		}
+	case *companySnapshot:
+		if snapshot.ID == uuid.Nil || snapshot.CreatedAt.IsZero() || snapshot.UpdatedAt.IsZero() {
+			return errors.New("company snapshot requires ID, created_at, and updated_at")
+		}
+	case *relationshipSnapshot:
+		if snapshot.ID == uuid.Nil || snapshot.SourceID == uuid.Nil || snapshot.TargetID == uuid.Nil || snapshot.CreatedAt.IsZero() {
+			return errors.New("relationship snapshot requires ID, source_id, target_id, and created_at")
+		}
+	default:
+		return fmt.Errorf("unsupported history snapshot destination %T", destination)
+	}
+	return nil
+}
+
+func snapshotIdentityAndRelatedIDs(entityType EntityType, snapshot json.RawMessage) (uuid.UUID, []uuid.UUID, error) {
+	switch entityType {
+	case EntityContact:
+		contact, err := ContactFromSnapshot(snapshot)
+		if err != nil {
+			return uuid.Nil, nil, err
+		}
+		return contact.ID, []uuid.UUID{contact.ID}, nil
+	case EntityCompany:
+		company, err := CompanyFromSnapshot(snapshot)
+		if err != nil {
+			return uuid.Nil, nil, err
+		}
+		return company.ID, []uuid.UUID{company.ID}, nil
+	case EntityRelationship:
+		relationship, err := RelationshipFromSnapshot(snapshot)
+		if err != nil {
+			return uuid.Nil, nil, err
+		}
+		return relationship.ID, canonicalRelatedIDs([]uuid.UUID{
+			relationship.ID,
+			relationship.SourceID,
+			relationship.TargetID,
+		}), nil
+	default:
+		return uuid.Nil, nil, fmt.Errorf("invalid history entity type %q", entityType)
+	}
 }
 
 func canonicalSnapshot(entityType EntityType, snapshot json.RawMessage) (json.RawMessage, error) {
@@ -276,4 +370,15 @@ func snapshotObject(snapshot json.RawMessage) (map[string]any, error) {
 		return make(map[string]any), nil
 	}
 	return object, nil
+}
+
+func strictSnapshotObject(entityType EntityType, snapshot json.RawMessage) (map[string]any, error) {
+	if isNullSnapshot(snapshot) {
+		return make(map[string]any), nil
+	}
+	canonical, err := canonicalSnapshot(entityType, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return snapshotObject(canonical)
 }
