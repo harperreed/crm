@@ -816,33 +816,112 @@ func exactYAMLNode(value any) (*yaml.Node, error) {
 }
 
 func exactYAMLValue(node *yaml.Node) (any, error) {
+	return exactYAMLValueWithAliases(node, make(map[*yaml.Node]bool))
+}
+
+func exactYAMLValueWithAliases(node *yaml.Node, activeAliases map[*yaml.Node]bool) (any, error) {
 	switch node.Kind {
 	case yaml.MappingNode:
-		result := make(map[string]any, len(node.Content)/2)
-		for index := 0; index < len(node.Content); index += 2 {
-			key := node.Content[index].Value
-			value, err := exactYAMLValue(node.Content[index+1])
-			if err != nil {
-				return nil, err
-			}
-			result[key] = value
-		}
-		return result, nil
+		return exactYAMLMappingValue(node, activeAliases)
 	case yaml.SequenceNode:
 		result := make([]any, len(node.Content))
 		for index, child := range node.Content {
-			value, err := exactYAMLValue(child)
+			value, err := exactYAMLValueWithAliases(child, activeAliases)
 			if err != nil {
 				return nil, err
 			}
 			result[index] = value
 		}
 		return result, nil
+	case yaml.AliasNode:
+		return exactYAMLAliasValue(node, activeAliases)
 	case yaml.ScalarNode:
 		return exactYAMLScalarValue(node)
 	default:
 		return nil, fmt.Errorf("unsupported YAML node kind %d", node.Kind)
 	}
+}
+
+func exactYAMLMappingValue(node *yaml.Node, activeAliases map[*yaml.Node]bool) (map[string]any, error) {
+	if err := rejectDuplicateYAMLKeys(node); err != nil {
+		return nil, err
+	}
+	result := make(map[string]any, len(node.Content)/2)
+	var merge *yaml.Node
+	for index := 0; index < len(node.Content); index += 2 {
+		keyNode := node.Content[index]
+		if isExactYAMLMerge(keyNode) {
+			merge = node.Content[index+1]
+			continue
+		}
+		value, err := exactYAMLValueWithAliases(node.Content[index+1], activeAliases)
+		if err != nil {
+			return nil, err
+		}
+		result[keyNode.Value] = value
+	}
+	if merge != nil {
+		if err := mergeExactYAMLMapping(result, merge, activeAliases); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+func rejectDuplicateYAMLKeys(node *yaml.Node) error {
+	for index := 0; index < len(node.Content); index += 2 {
+		key := node.Content[index]
+		for otherIndex := index + 2; otherIndex < len(node.Content); otherIndex += 2 {
+			other := node.Content[otherIndex]
+			if key.Kind == other.Kind && key.Value == other.Value {
+				return fmt.Errorf("line %d: mapping key %q already defined at line %d", other.Line, other.Value, key.Line)
+			}
+		}
+	}
+	return nil
+}
+
+func exactYAMLAliasValue(node *yaml.Node, activeAliases map[*yaml.Node]bool) (any, error) {
+	if node.Alias == nil {
+		return nil, errors.New("YAML alias has no target")
+	}
+	if activeAliases[node.Alias] {
+		return nil, fmt.Errorf("cyclic YAML alias %q", node.Value)
+	}
+	activeAliases[node.Alias] = true
+	defer delete(activeAliases, node.Alias)
+	return exactYAMLValueWithAliases(node.Alias, activeAliases)
+}
+
+func mergeExactYAMLMapping(result map[string]any, node *yaml.Node, activeAliases map[*yaml.Node]bool) error {
+	sources := []*yaml.Node{node}
+	if node.Kind == yaml.SequenceNode {
+		sources = node.Content
+	}
+	for _, source := range sources {
+		if source.Kind != yaml.MappingNode && (source.Kind != yaml.AliasNode || source.Alias == nil || source.Alias.Kind != yaml.MappingNode) {
+			return errors.New("map merge requires map or sequence of maps as the value")
+		}
+		value, err := exactYAMLValueWithAliases(source, activeAliases)
+		if err != nil {
+			return err
+		}
+		mapping, ok := value.(map[string]any)
+		if !ok {
+			return errors.New("map merge requires map or sequence of maps as the value")
+		}
+		for key, item := range mapping {
+			if _, exists := result[key]; !exists {
+				result[key] = item
+			}
+		}
+	}
+	return nil
+}
+
+func isExactYAMLMerge(node *yaml.Node) bool {
+	return node.Kind == yaml.ScalarNode && node.Value == "<<" &&
+		(node.Tag == "" || node.Tag == "!" || node.ShortTag() == "!!merge")
 }
 
 func exactYAMLScalarValue(node *yaml.Node) (any, error) {
@@ -971,7 +1050,7 @@ func (s *MarkdownStore) applyContactHistoryEvent(event *history.Event) error {
 		if err := s.writeContactNew(contact, filename); err != nil {
 			return fmt.Errorf("write contact %s: %w", event.EntityID, err)
 		}
-		return syncMarkdownHistoryDirectory(s.contactsDir())
+		return nil
 	}
 	if current == nil {
 		return ErrContactNotFound
@@ -982,7 +1061,7 @@ func (s *MarkdownStore) applyContactHistoryEvent(event *history.Event) error {
 	if err := syncMarkdownHistoryDirectory(s.contactsDir()); err != nil {
 		return err
 	}
-	return syncMarkdownHistoryDirectory(s.contactsDir())
+	return nil
 }
 
 func (s *MarkdownStore) applyCompanyHistoryEvent(event *history.Event) error {
@@ -1014,7 +1093,7 @@ func (s *MarkdownStore) applyCompanyHistoryEvent(event *history.Event) error {
 		if err := s.writeCompanyNew(company, filename); err != nil {
 			return fmt.Errorf("write company %s: %w", event.EntityID, err)
 		}
-		return syncMarkdownHistoryDirectory(s.companiesDir())
+		return nil
 	}
 	if current == nil {
 		return ErrCompanyNotFound
@@ -1025,7 +1104,7 @@ func (s *MarkdownStore) applyCompanyHistoryEvent(event *history.Event) error {
 	if err := syncMarkdownHistoryDirectory(s.companiesDir()); err != nil {
 		return err
 	}
-	return syncMarkdownHistoryDirectory(s.companiesDir())
+	return nil
 }
 
 func (s *MarkdownStore) applyRelationshipHistoryEvent(event *history.Event) error {

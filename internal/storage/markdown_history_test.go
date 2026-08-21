@@ -750,6 +750,56 @@ func TestMarkdownFrontmatterAcceptsNullFields(t *testing.T) {
 	})
 }
 
+func TestMarkdownExactYAMLRejectsNestedDuplicateKeys(t *testing.T) {
+	var document struct {
+		Fields exactYAMLFields `yaml:"fields"`
+	}
+	err := strictYAMLUnmarshal([]byte("fields:\n  nested:\n    value: first\n    value: second\n"), &document)
+	if err == nil {
+		t.Fatal("strictYAMLUnmarshal accepted a nested duplicate field key")
+	}
+}
+
+func TestMarkdownExactYAMLAliases(t *testing.T) {
+	var document struct {
+		Fields exactYAMLFields `yaml:"fields"`
+	}
+	data := []byte("fields:\n  source: &source\n    exact: 184467440737095516150\n  copy: *source\n")
+	if err := strictYAMLUnmarshal(data, &document); err != nil {
+		t.Fatalf("strictYAMLUnmarshal alias: %v", err)
+	}
+	want := map[string]any{"exact": json.Number("184467440737095516150")}
+	for _, key := range []string{"source", "copy"} {
+		if !reflect.DeepEqual(document.Fields[key], want) {
+			t.Fatalf("Fields[%q] = %#v, want %#v", key, document.Fields[key], want)
+		}
+	}
+}
+
+func TestMarkdownExactYAMLMergeKeys(t *testing.T) {
+	var document struct {
+		Fields exactYAMLFields `yaml:"fields"`
+	}
+	data := []byte("fields:\n  defaults: &defaults\n    exact: 184467440737095516150\n    label: default\n  merged:\n    <<: *defaults\n    label: override\n")
+	if err := strictYAMLUnmarshal(data, &document); err != nil {
+		t.Fatalf("strictYAMLUnmarshal merge: %v", err)
+	}
+	want := map[string]any{"exact": json.Number("184467440737095516150"), "label": "override"}
+	if !reflect.DeepEqual(document.Fields["merged"], want) {
+		t.Fatalf("Fields[merged] = %#v, want %#v", document.Fields["merged"], want)
+	}
+}
+
+func TestMarkdownExactYAMLRejectsAliasCycles(t *testing.T) {
+	var document struct {
+		Fields exactYAMLFields `yaml:"fields"`
+	}
+	err := strictYAMLUnmarshal([]byte("fields: &fields\n  self: *fields\n"), &document)
+	if err == nil || !strings.Contains(err.Error(), "cyclic YAML alias") {
+		t.Fatalf("strictYAMLUnmarshal cycle error = %v, want cyclic YAML alias", err)
+	}
+}
+
 func TestMarkdownRecoveryAppliesPendingUpdate(t *testing.T) {
 	dataDir := t.TempDir()
 	store, err := NewMarkdownStore(dataDir, history.SourceCLI)
@@ -758,7 +808,7 @@ func TestMarkdownRecoveryAppliesPendingUpdate(t *testing.T) {
 	}
 	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
 	before := &models.Contact{ID: uuid.New(), Name: "Before", Fields: map[string]any{"exact": int64(9007199254740993)}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
-	if err := store.writeContact(before, slugForName(before.Name, before.ID.String(), store.contactsDir())); err != nil {
+	if err := store.writeContact(before, "before.md"); err != nil {
 		t.Fatalf("writeContact: %v", err)
 	}
 	after := cloneContactForTest(before)
@@ -792,7 +842,7 @@ func TestMarkdownRecoveryFinalizesPendingAlreadyApplied(t *testing.T) {
 	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
 	contact := &models.Contact{ID: uuid.New(), Name: "Applied", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
 	event := mustHistoryEventForTest(t, history.EntityContact, contact.ID, []uuid.UUID{contact.ID}, history.ActionCreate, nil, mustMarkdownContactSnapshot(t, contact), now)
-	if err := store.writeContact(contact, slugForName(contact.Name, contact.ID.String(), store.contactsDir())); err != nil {
+	if err := store.writeContact(contact, "applied.md"); err != nil {
 		t.Fatalf("writeContact: %v", err)
 	}
 	writePendingHistoryForTest(t, store, event)
@@ -817,7 +867,7 @@ func TestMarkdownRecoveryPreservesConflict(t *testing.T) {
 	after.Name = "After"
 	other := cloneContactForTest(before)
 	other.Name = "Manual edit"
-	if err := store.writeContact(other, slugForName(other.Name, other.ID.String(), store.contactsDir())); err != nil {
+	if err := store.writeContact(other, "manual-edit.md"); err != nil {
 		t.Fatalf("writeContact: %v", err)
 	}
 	event := mustHistoryEventForTest(t, history.EntityContact, before.ID, []uuid.UUID{before.ID}, history.ActionUpdate, mustMarkdownContactSnapshot(t, before), mustMarkdownContactSnapshot(t, after), now.Add(time.Minute))
@@ -1052,7 +1102,7 @@ func TestMarkdownRecoveryHandlesCommittedAndPendingCopies(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewMarkdownStore: %v", err)
 		}
-		if err := store.writeContact(contact, slugForName(contact.Name, contact.ID.String(), store.contactsDir())); err != nil {
+		if err := store.writeContact(contact, "applied.md"); err != nil {
 			t.Fatalf("writeContact: %v", err)
 		}
 		if err := store.writeCommittedHistoryEvent(event); err != nil {
@@ -1073,7 +1123,7 @@ func TestMarkdownRecoveryHandlesCommittedAndPendingCopies(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewMarkdownStore: %v", err)
 		}
-		if err := store.writeContact(contact, slugForName(contact.Name, contact.ID.String(), store.contactsDir())); err != nil {
+		if err := store.writeContact(contact, "applied.md"); err != nil {
 			t.Fatalf("writeContact: %v", err)
 		}
 		conflicting := *event
@@ -1137,7 +1187,7 @@ func TestMarkdownRecoveryAcceptsRenamedContactAfterStateAtOldFilename(t *testing
 	after := cloneContactForTest(before)
 	after.Name = "New Name"
 	after.UpdatedAt = now.Add(time.Minute)
-	oldFilename := slugForName(before.Name, before.ID.String(), store.contactsDir())
+	oldFilename := "old-name.md"
 	if err := store.writeContact(after, oldFilename); err != nil {
 		t.Fatalf("writeContact intermediate state: %v", err)
 	}

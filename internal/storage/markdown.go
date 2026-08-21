@@ -102,18 +102,6 @@ func (s *MarkdownStore) relationshipsFile() string {
 	return filepath.Join(s.dataDir, "_relationships.yaml")
 }
 
-// slugForName generates a filename-safe slug, appending a UUID prefix on collision.
-func slugForName(name, id, dir string) string {
-	base := mdstore.Slugify(name)
-	candidate := base + ".md"
-	path := filepath.Join(dir, candidate)
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return candidate
-	}
-	// Collision: prepend first 8 chars of UUID
-	return id[:8] + "-" + base + ".md"
-}
-
 func availableSlugForName(name, id, dir, currentPath string) (string, error) {
 	base := mdstore.Slugify(name) + ".md"
 	candidates := []string{base, id[:8] + "-" + base, id + "-" + base}
