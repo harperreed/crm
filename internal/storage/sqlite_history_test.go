@@ -308,6 +308,156 @@ func TestSqliteHistoryNoOpCompany(t *testing.T) {
 	}
 }
 
+func TestSqliteHistoryNoOpContactPreservesCreationTime(t *testing.T) {
+	store := newTestStore(t)
+	fixedSQLiteHistoryTimes(store)
+	contact := &models.Contact{
+		ID:        uuid.New(),
+		Name:      "Immutable Contact Time",
+		Fields:    map[string]any{},
+		Tags:      []string{},
+		CreatedAt: testHistoryTime,
+		UpdatedAt: testHistoryTime,
+	}
+	if err := store.CreateContact(contact); err != nil {
+		t.Fatalf("CreateContact: %v", err)
+	}
+	candidate, err := store.GetContact(contact.ID)
+	if err != nil {
+		t.Fatalf("GetContact: %v", err)
+	}
+	wantCreatedAt := candidate.CreatedAt
+	wantUpdatedAt := candidate.UpdatedAt
+	candidate.CreatedAt = candidate.CreatedAt.Add(24 * time.Hour)
+	callerCreatedAt := candidate.CreatedAt
+	candidate.Touch()
+	if err := store.UpdateContact(candidate); err != nil {
+		t.Fatalf("UpdateContact: %v", err)
+	}
+
+	assertSQLiteHistoryActions(t, store, contact.ID, []history.Action{history.ActionCreate})
+	got, err := store.GetContact(contact.ID)
+	if err != nil {
+		t.Fatalf("GetContact after no-op: %v", err)
+	}
+	if !got.CreatedAt.Equal(wantCreatedAt) || !got.UpdatedAt.Equal(wantUpdatedAt) {
+		t.Fatalf("stored times = created:%s updated:%s, want created:%s updated:%s",
+			got.CreatedAt, got.UpdatedAt, wantCreatedAt, wantUpdatedAt)
+	}
+	if !candidate.CreatedAt.Equal(callerCreatedAt) {
+		t.Fatalf("UpdateContact mutated caller CreatedAt to %s", candidate.CreatedAt)
+	}
+}
+
+func TestSqliteHistoryNoOpCompanyPreservesCreationTime(t *testing.T) {
+	store := newTestStore(t)
+	fixedSQLiteHistoryTimes(store)
+	company := &models.Company{
+		ID:        uuid.New(),
+		Name:      "Immutable Company Time",
+		Fields:    map[string]any{},
+		Tags:      []string{},
+		CreatedAt: testHistoryTime,
+		UpdatedAt: testHistoryTime,
+	}
+	if err := store.CreateCompany(company); err != nil {
+		t.Fatalf("CreateCompany: %v", err)
+	}
+	candidate, err := store.GetCompany(company.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	wantCreatedAt := candidate.CreatedAt
+	wantUpdatedAt := candidate.UpdatedAt
+	candidate.CreatedAt = candidate.CreatedAt.Add(24 * time.Hour)
+	callerCreatedAt := candidate.CreatedAt
+	candidate.Touch()
+	if err := store.UpdateCompany(candidate); err != nil {
+		t.Fatalf("UpdateCompany: %v", err)
+	}
+
+	assertSQLiteHistoryActions(t, store, company.ID, []history.Action{history.ActionCreate})
+	got, err := store.GetCompany(company.ID)
+	if err != nil {
+		t.Fatalf("GetCompany after no-op: %v", err)
+	}
+	if !got.CreatedAt.Equal(wantCreatedAt) || !got.UpdatedAt.Equal(wantUpdatedAt) {
+		t.Fatalf("stored times = created:%s updated:%s, want created:%s updated:%s",
+			got.CreatedAt, got.UpdatedAt, wantCreatedAt, wantUpdatedAt)
+	}
+	if !candidate.CreatedAt.Equal(callerCreatedAt) {
+		t.Fatalf("UpdateCompany mutated caller CreatedAt to %s", candidate.CreatedAt)
+	}
+}
+
+func TestSqliteHistoryMutationContactPreservesCreationTime(t *testing.T) {
+	store := newTestStore(t)
+	fixedSQLiteHistoryTimes(store)
+	contact := newSQLiteHistoryContact(uuid.New(), "Before Contact")
+	if err := store.CreateContact(contact); err != nil {
+		t.Fatalf("CreateContact: %v", err)
+	}
+	current, err := store.GetContact(contact.ID)
+	if err != nil {
+		t.Fatalf("GetContact: %v", err)
+	}
+	before := mustContactSnapshot(t, current)
+	candidate := *current
+	candidate.Name = "After Contact"
+	candidate.CreatedAt = current.CreatedAt.Add(24 * time.Hour)
+	callerCreatedAt := candidate.CreatedAt
+	candidate.UpdatedAt = current.UpdatedAt.Add(time.Hour)
+	if err := store.UpdateContact(&candidate); err != nil {
+		t.Fatalf("UpdateContact: %v", err)
+	}
+
+	got, err := store.GetContact(contact.ID)
+	if err != nil {
+		t.Fatalf("GetContact after update: %v", err)
+	}
+	if got.Name != candidate.Name || !got.CreatedAt.Equal(current.CreatedAt) || !got.UpdatedAt.Equal(candidate.UpdatedAt) {
+		t.Fatalf("stored contact = %#v, candidate = %#v", got, candidate)
+	}
+	if !candidate.CreatedAt.Equal(callerCreatedAt) {
+		t.Fatalf("UpdateContact mutated caller CreatedAt to %s", candidate.CreatedAt)
+	}
+	assertLatestSQLiteUpdate(t, store, contact.ID, before, mustContactSnapshot(t, got))
+}
+
+func TestSqliteHistoryMutationCompanyPreservesCreationTime(t *testing.T) {
+	store := newTestStore(t)
+	fixedSQLiteHistoryTimes(store)
+	company := newSQLiteHistoryCompany(uuid.New(), "Before Company")
+	if err := store.CreateCompany(company); err != nil {
+		t.Fatalf("CreateCompany: %v", err)
+	}
+	current, err := store.GetCompany(company.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	before := mustCompanySnapshot(t, current)
+	candidate := *current
+	candidate.Name = "After Company"
+	candidate.CreatedAt = current.CreatedAt.Add(24 * time.Hour)
+	callerCreatedAt := candidate.CreatedAt
+	candidate.UpdatedAt = current.UpdatedAt.Add(time.Hour)
+	if err := store.UpdateCompany(&candidate); err != nil {
+		t.Fatalf("UpdateCompany: %v", err)
+	}
+
+	got, err := store.GetCompany(company.ID)
+	if err != nil {
+		t.Fatalf("GetCompany after update: %v", err)
+	}
+	if got.Name != candidate.Name || !got.CreatedAt.Equal(current.CreatedAt) || !got.UpdatedAt.Equal(candidate.UpdatedAt) {
+		t.Fatalf("stored company = %#v, candidate = %#v", got, candidate)
+	}
+	if !candidate.CreatedAt.Equal(callerCreatedAt) {
+		t.Fatalf("UpdateCompany mutated caller CreatedAt to %s", candidate.CreatedAt)
+	}
+	assertLatestSQLiteUpdate(t, store, company.ID, before, mustCompanySnapshot(t, got))
+}
+
 func TestSqliteHistoryRollbackContactCreate(t *testing.T) {
 	store := newTestStore(t)
 	fixedSQLiteHistoryTimes(store)
@@ -579,6 +729,28 @@ func fixedSQLiteHistoryTimes(store *SqliteStore) []time.Time {
 	return times
 }
 
+func newSQLiteHistoryContact(id uuid.UUID, name string) *models.Contact {
+	return &models.Contact{
+		ID:        id,
+		Name:      name,
+		Fields:    map[string]any{},
+		Tags:      []string{},
+		CreatedAt: testHistoryTime,
+		UpdatedAt: testHistoryTime,
+	}
+}
+
+func newSQLiteHistoryCompany(id uuid.UUID, name string) *models.Company {
+	return &models.Company{
+		ID:        id,
+		Name:      name,
+		Fields:    map[string]any{},
+		Tags:      []string{},
+		CreatedAt: testHistoryTime,
+		UpdatedAt: testHistoryTime,
+	}
+}
+
 func installFailHistoryTrigger(t *testing.T, store *SqliteStore) {
 	t.Helper()
 	_, err := store.db.Exec(`
@@ -715,6 +887,29 @@ func assertSQLiteHistoryAfterMatches(
 		t.Fatalf("GetHistoryEvent: %v", err)
 	}
 	assertSQLiteSnapshotEqual(t, event.EntityType, event.After, want)
+}
+
+func assertLatestSQLiteUpdate(
+	t *testing.T,
+	store *SqliteStore,
+	entityID uuid.UUID,
+	before json.RawMessage,
+	after json.RawMessage,
+) {
+	t.Helper()
+	summaries, err := store.ListHistory(entityID.String(), 0)
+	if err != nil {
+		t.Fatalf("ListHistory: %v", err)
+	}
+	if len(summaries) != 2 || summaries[0].Action != history.ActionUpdate {
+		t.Fatalf("history summaries = %#v, want latest update and earlier create", summaries)
+	}
+	event, err := store.GetHistoryEvent(summaries[0].ID.String())
+	if err != nil {
+		t.Fatalf("GetHistoryEvent: %v", err)
+	}
+	assertSQLiteSnapshotEqual(t, event.EntityType, event.Before, before)
+	assertSQLiteSnapshotEqual(t, event.EntityType, event.After, after)
 }
 
 var (

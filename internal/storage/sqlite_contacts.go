@@ -149,7 +149,9 @@ func (s *SqliteStore) UpdateContact(c *models.Contact) error {
 	if err != nil {
 		return fmt.Errorf("snapshot current contact: %w", err)
 	}
-	after, err := sqliteContactSnapshot(c)
+	candidate := *c
+	candidate.CreatedAt = current.CreatedAt
+	after, err := sqliteContactSnapshot(&candidate)
 	if err != nil {
 		return fmt.Errorf("snapshot updated contact: %w", err)
 	}

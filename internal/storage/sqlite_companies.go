@@ -149,7 +149,9 @@ func (s *SqliteStore) UpdateCompany(c *models.Company) error {
 	if err != nil {
 		return fmt.Errorf("snapshot current company: %w", err)
 	}
-	after, err := sqliteCompanySnapshot(c)
+	candidate := *c
+	candidate.CreatedAt = current.CreatedAt
+	after, err := sqliteCompanySnapshot(&candidate)
 	if err != nil {
 		return fmt.Errorf("snapshot updated company: %w", err)
 	}
