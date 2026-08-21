@@ -356,7 +356,7 @@ func (s *MarkdownStore) recoverPendingHistory() error {
 		if err != nil {
 			return fmt.Errorf("%w: inspect pending history event %s: %w", ErrHistoryCorrupt, path, err)
 		}
-		if info.Mode()&os.ModeSymlink != 0 || info.IsDir() {
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			return fmt.Errorf("%w: pending history path %s is not a regular file", ErrHistoryCorrupt, path)
 		}
 		if strings.HasSuffix(entry.Name(), ".tmp") {
@@ -364,9 +364,6 @@ func (s *MarkdownStore) recoverPendingHistory() error {
 		}
 		if filepath.Ext(entry.Name()) != ".json" {
 			return fmt.Errorf("%w: unexpected file in pending history directory: %s", ErrHistoryCorrupt, path)
-		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("%w: pending history path %s is not a regular file", ErrHistoryCorrupt, path)
 		}
 		data, err := readFileWithoutFollowingSymlinks(path)
 		if err != nil {

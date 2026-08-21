@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1178,6 +1179,25 @@ func TestMarkdownPendingRejectsUnexpectedEntriesAndTrailingJSON(t *testing.T) {
 				t.Fatalf("error = %v, want ErrHistoryCorrupt", err)
 			}
 		})
+	}
+}
+
+func TestMarkdownPendingRejectsFIFOWithTempSuffix(t *testing.T) {
+	dataDir := t.TempDir()
+	store, err := NewMarkdownStore(dataDir, history.SourceCLI)
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+	path := filepath.Join(store.historyPendingDir(), "interrupted.tmp")
+	if err := syscall.Mkfifo(path, 0o600); err != nil {
+		t.Fatalf("Mkfifo: %v", err)
+	}
+	_, err = NewMarkdownStore(dataDir, history.SourceCLI)
+	if !errors.Is(err, ErrHistoryCorrupt) {
+		t.Fatalf("NewMarkdownStore error = %v, want ErrHistoryCorrupt", err)
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Fatalf("NewMarkdownStore error = %q, want path %q", err, path)
 	}
 }
 
