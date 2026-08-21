@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/harperreed/crm/internal/history"
@@ -22,10 +23,51 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
+func decodeSQLiteJSON(value string, destination any) error {
+	decoder := json.NewDecoder(bytes.NewReader([]byte(value)))
+	decoder.UseNumber()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	if fields, ok := destination.(*map[string]any); ok {
+		for key, field := range *fields {
+			(*fields)[key] = compatibleSQLiteJSONNumber(field)
+		}
+	}
+	return nil
+}
+
+func compatibleSQLiteJSONNumber(value any) any {
+	switch value := value.(type) {
+	case json.Number:
+		parsed, err := strconv.ParseFloat(value.String(), 64)
+		if err != nil {
+			return value
+		}
+		encoded, err := json.Marshal(parsed)
+		if err == nil && string(encoded) == value.String() {
+			return parsed
+		}
+		return value
+	case []any:
+		for index, item := range value {
+			value[index] = compatibleSQLiteJSONNumber(item)
+		}
+		return value
+	case map[string]any:
+		for key, item := range value {
+			value[key] = compatibleSQLiteJSONNumber(item)
+		}
+		return value
+	default:
+		return value
+	}
+}
+
 func (s *SqliteStore) commitHistoryEvent(event *history.Event) error {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("begin history transaction: %w", err)
+		return wrapSQLiteHistoryError("begin history transaction", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -44,15 +86,34 @@ func (s *SqliteStore) commitHistoryEvent(event *history.Event) error {
 		return fmt.Errorf("%w: current %s %s does not match event before snapshot", ErrHistoryConflict, event.EntityType, event.EntityID)
 	}
 	if err := applySQLiteHistoryEvent(tx, event); err != nil {
-		return err
+		return normalizeSQLiteHistoryConflict(err)
 	}
 	if err := insertSQLiteHistoryEvent(tx, event); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit history transaction: %w", err)
+		return wrapSQLiteHistoryError("commit history transaction", err)
 	}
 	return nil
+}
+
+// sqliteCodeError matches modernc.org/sqlite.Error without coupling history logic to driver internals.
+type sqliteCodeError interface {
+	error
+	Code() int
+}
+
+func wrapSQLiteHistoryError(operation string, err error) error {
+	return normalizeSQLiteHistoryConflict(fmt.Errorf("%s: %w", operation, err))
+}
+
+func normalizeSQLiteHistoryConflict(err error) error {
+	const sqliteBusyPrimaryCode = 5
+	var sqliteError sqliteCodeError
+	if errors.As(err, &sqliteError) && sqliteError.Code()&0xff == sqliteBusyPrimaryCode {
+		return fmt.Errorf("%w: %w", ErrHistoryConflict, err)
+	}
+	return err
 }
 
 func currentSQLiteSnapshot(tx *sql.Tx, event *history.Event) (json.RawMessage, error) {
@@ -108,16 +169,21 @@ func currentSQLiteSnapshot(tx *sql.Tx, event *history.Event) (json.RawMessage, e
 }
 
 func applySQLiteHistoryEvent(tx *sql.Tx, event *history.Event) error {
+	var err error
 	switch event.EntityType {
 	case history.EntityContact:
-		return applySQLiteContactHistoryEvent(tx, event)
+		err = applySQLiteContactHistoryEvent(tx, event)
 	case history.EntityCompany:
-		return applySQLiteCompanyHistoryEvent(tx, event)
+		err = applySQLiteCompanyHistoryEvent(tx, event)
 	case history.EntityRelationship:
-		return applySQLiteRelationshipHistoryEvent(tx, event)
+		err = applySQLiteRelationshipHistoryEvent(tx, event)
 	default:
 		return fmt.Errorf("unsupported history entity type %q", event.EntityType)
 	}
+	if err != nil {
+		return fmt.Errorf("apply %s %s %s: %w", event.Action, event.EntityType, event.EntityID, err)
+	}
+	return nil
 }
 
 func applySQLiteContactHistoryEvent(tx *sql.Tx, event *history.Event) error {

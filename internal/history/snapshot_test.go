@@ -3,6 +3,7 @@
 package history
 
 import (
+	"bytes"
 	"encoding/json"
 	"reflect"
 	"slices"
@@ -69,6 +70,62 @@ func TestCompanySnapshotRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(got, company) {
 		t.Fatalf("CompanyFromSnapshot() = %#v, want %#v", got, company)
 	}
+}
+
+func TestSnapshotRoundTripPreservesJSONNumbers(t *testing.T) {
+	t.Run("contact", func(t *testing.T) {
+		contact := &models.Contact{
+			ID:        uuid.MustParse("10000000-0000-0000-0000-000000000009"),
+			Name:      "Exact Number Contact",
+			Fields:    nestedLargeNumberFields(),
+			Tags:      []string{},
+			CreatedAt: time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC),
+		}
+		before, err := SnapshotContact(contact)
+		if err != nil {
+			t.Fatalf("SnapshotContact: %v", err)
+		}
+		decoded, err := ContactFromSnapshot(before)
+		if err != nil {
+			t.Fatalf("ContactFromSnapshot: %v", err)
+		}
+		assertNestedLargeNumber(t, decoded.Fields)
+		after, err := SnapshotContact(decoded)
+		if err != nil {
+			t.Fatalf("SnapshotContact decoded: %v", err)
+		}
+		if !bytes.Equal(after, before) {
+			t.Fatalf("round-trip snapshot = %s, want %s", after, before)
+		}
+	})
+
+	t.Run("company", func(t *testing.T) {
+		company := &models.Company{
+			ID:        uuid.MustParse("20000000-0000-0000-0000-000000000009"),
+			Name:      "Exact Number Company",
+			Fields:    nestedLargeNumberFields(),
+			Tags:      []string{},
+			CreatedAt: time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC),
+		}
+		before, err := SnapshotCompany(company)
+		if err != nil {
+			t.Fatalf("SnapshotCompany: %v", err)
+		}
+		decoded, err := CompanyFromSnapshot(before)
+		if err != nil {
+			t.Fatalf("CompanyFromSnapshot: %v", err)
+		}
+		assertNestedLargeNumber(t, decoded.Fields)
+		after, err := SnapshotCompany(decoded)
+		if err != nil {
+			t.Fatalf("SnapshotCompany decoded: %v", err)
+		}
+		if !bytes.Equal(after, before) {
+			t.Fatalf("round-trip snapshot = %s, want %s", after, before)
+		}
+	})
 }
 
 func TestRelationshipSnapshotRoundTrip(t *testing.T) {
@@ -310,5 +367,29 @@ func assertSnapshotKeys(t *testing.T, snapshot json.RawMessage, want []string) {
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Fatalf("snapshot keys = %v, want %v", got, want)
+	}
+}
+
+func nestedLargeNumberFields() map[string]any {
+	return map[string]any{
+		"nested": []any{
+			map[string]any{"integer": json.Number("9007199254740993")},
+		},
+	}
+}
+
+func assertNestedLargeNumber(t *testing.T, fields map[string]any) {
+	t.Helper()
+	nested, ok := fields["nested"].([]any)
+	if !ok || len(nested) != 1 {
+		t.Fatalf("nested field = %#v", fields["nested"])
+	}
+	object, ok := nested[0].(map[string]any)
+	if !ok {
+		t.Fatalf("nested object = %#v", nested[0])
+	}
+	number, ok := object["integer"].(json.Number)
+	if !ok || number.String() != "9007199254740993" {
+		t.Fatalf("nested integer = %#v, want exact json.Number", object["integer"])
 	}
 }

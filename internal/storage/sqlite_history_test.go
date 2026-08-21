@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -207,6 +208,86 @@ func TestSqliteHistoryMutationCompany(t *testing.T) {
 		{action: history.ActionDelete, occurredAt: eventTimes[2], before: updatedSnapshot, after: nil, related: []uuid.UUID{company.ID}},
 		{action: history.ActionUpdate, occurredAt: eventTimes[1], before: createdSnapshot, after: updatedSnapshot, related: []uuid.UUID{company.ID}},
 		{action: history.ActionCreate, occurredAt: eventTimes[0], before: nil, after: createdSnapshot, related: []uuid.UUID{company.ID}},
+	})
+}
+
+func TestSqliteHistoryMutationContactPreservesLargeJSONNumber(t *testing.T) {
+	store := newTestStore(t)
+	fixedSQLiteHistoryTimes(store)
+	contact := newSQLiteHistoryContact(uuid.New(), "Large Number Contact")
+	contact.Fields = nestedSQLiteLargeNumberFields()
+	if err := store.CreateContact(contact); err != nil {
+		t.Fatalf("CreateContact: %v", err)
+	}
+
+	fetched, err := store.GetContact(contact.ID)
+	if err != nil {
+		t.Fatalf("GetContact: %v", err)
+	}
+	assertSQLiteNestedLargeNumber(t, fetched.Fields)
+	assertSQLiteHistoryAfterMatches(t, store, contact.ID, mustContactSnapshot(t, fetched))
+	listed, err := store.ListContacts(nil)
+	if err != nil {
+		t.Fatalf("ListContacts: %v", err)
+	}
+	assertSQLiteNestedLargeNumber(t, listed[0].Fields)
+
+	fetched.Name = "Updated Large Number Contact"
+	fetched.UpdatedAt = fetched.UpdatedAt.Add(time.Hour)
+	if err := store.UpdateContact(fetched); err != nil {
+		t.Fatalf("UpdateContact: %v", err)
+	}
+	updated, err := store.GetContact(contact.ID)
+	if err != nil {
+		t.Fatalf("GetContact after update: %v", err)
+	}
+	assertSQLiteNestedLargeNumber(t, updated.Fields)
+	assertLatestSQLiteUpdate(t, store, contact.ID, mustContactSnapshot(t, contact), mustContactSnapshot(t, updated))
+	if err := store.DeleteContact(contact.ID); err != nil {
+		t.Fatalf("DeleteContact: %v", err)
+	}
+	assertSQLiteHistoryActions(t, store, contact.ID, []history.Action{
+		history.ActionDelete, history.ActionUpdate, history.ActionCreate,
+	})
+}
+
+func TestSqliteHistoryMutationCompanyPreservesLargeJSONNumber(t *testing.T) {
+	store := newTestStore(t)
+	fixedSQLiteHistoryTimes(store)
+	company := newSQLiteHistoryCompany(uuid.New(), "Large Number Company")
+	company.Fields = nestedSQLiteLargeNumberFields()
+	if err := store.CreateCompany(company); err != nil {
+		t.Fatalf("CreateCompany: %v", err)
+	}
+
+	fetched, err := store.GetCompany(company.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	assertSQLiteNestedLargeNumber(t, fetched.Fields)
+	assertSQLiteHistoryAfterMatches(t, store, company.ID, mustCompanySnapshot(t, fetched))
+	listed, err := store.ListCompanies(nil)
+	if err != nil {
+		t.Fatalf("ListCompanies: %v", err)
+	}
+	assertSQLiteNestedLargeNumber(t, listed[0].Fields)
+
+	fetched.Name = "Updated Large Number Company"
+	fetched.UpdatedAt = fetched.UpdatedAt.Add(time.Hour)
+	if err := store.UpdateCompany(fetched); err != nil {
+		t.Fatalf("UpdateCompany: %v", err)
+	}
+	updated, err := store.GetCompany(company.ID)
+	if err != nil {
+		t.Fatalf("GetCompany after update: %v", err)
+	}
+	assertSQLiteNestedLargeNumber(t, updated.Fields)
+	assertLatestSQLiteUpdate(t, store, company.ID, mustCompanySnapshot(t, company), mustCompanySnapshot(t, updated))
+	if err := store.DeleteCompany(company.ID); err != nil {
+		t.Fatalf("DeleteCompany: %v", err)
+	}
+	assertSQLiteHistoryActions(t, store, company.ID, []history.Action{
+		history.ActionDelete, history.ActionUpdate, history.ActionCreate,
 	})
 }
 
@@ -508,6 +589,8 @@ func TestSqliteHistoryRollbackContactUpdate(t *testing.T) {
 	if got.Name != "Before Update" || !got.UpdatedAt.Equal(testHistoryTime) {
 		t.Fatalf("contact after rollback = %#v", got)
 	}
+	assertSQLiteContactSearchCount(t, store, "Before Update", 1)
+	assertSQLiteContactSearchCount(t, store, "After Update", 0)
 	assertSQLiteHistoryRowCount(t, store, 1)
 }
 
@@ -583,6 +666,86 @@ func TestSqliteHistoryRollbackCompanyAndRelationship(t *testing.T) {
 	})
 }
 
+func TestSqliteHistoryRollbackRemainingMutations(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*testing.T)
+	}{
+		{name: "company update", run: testSQLiteHistoryRollbackCompanyUpdate},
+		{name: "company delete", run: testSQLiteHistoryRollbackCompanyDelete},
+		{name: "relationship delete", run: testSQLiteHistoryRollbackRelationshipDelete},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, tt.run)
+	}
+}
+
+func testSQLiteHistoryRollbackCompanyUpdate(t *testing.T) {
+	store := newTestStore(t)
+	fixedSQLiteHistoryTimes(store)
+	company := newSQLiteHistoryCompany(uuid.New(), "Before Company Update")
+	if err := store.CreateCompany(company); err != nil {
+		t.Fatalf("CreateCompany: %v", err)
+	}
+	installFailHistoryTrigger(t, store)
+	company.Name = "After Company Update"
+	company.UpdatedAt = company.UpdatedAt.Add(time.Hour)
+	if err := store.UpdateCompany(company); err == nil {
+		t.Fatal("UpdateCompany() error = nil")
+	}
+	got, err := store.GetCompany(company.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	if got.Name != "Before Company Update" || !got.UpdatedAt.Equal(testHistoryTime) {
+		t.Fatalf("company after rollback = %#v", got)
+	}
+	assertSQLiteCompanySearchCount(t, store, "Before Company Update", 1)
+	assertSQLiteCompanySearchCount(t, store, "After Company Update", 0)
+	assertSQLiteHistoryRowCount(t, store, 1)
+}
+
+func testSQLiteHistoryRollbackCompanyDelete(t *testing.T) {
+	store := newTestStore(t)
+	fixedSQLiteHistoryTimes(store)
+	company := newSQLiteHistoryCompany(uuid.New(), "Preserved Company Delete")
+	if err := store.CreateCompany(company); err != nil {
+		t.Fatalf("CreateCompany: %v", err)
+	}
+	installFailHistoryTrigger(t, store)
+	if err := store.DeleteCompany(company.ID); err == nil {
+		t.Fatal("DeleteCompany() error = nil")
+	}
+	if _, err := store.GetCompany(company.ID); err != nil {
+		t.Fatalf("GetCompany after rollback: %v", err)
+	}
+	assertSQLiteHistoryRowCount(t, store, 1)
+}
+
+func testSQLiteHistoryRollbackRelationshipDelete(t *testing.T) {
+	store := newTestStore(t)
+	fixedSQLiteHistoryTimes(store)
+	relationship := &models.Relationship{
+		ID: uuid.New(), SourceID: uuid.New(), TargetID: uuid.New(),
+		Type: "preserved", CreatedAt: testHistoryTime,
+	}
+	if err := store.CreateRelationship(relationship); err != nil {
+		t.Fatalf("CreateRelationship: %v", err)
+	}
+	installFailHistoryTrigger(t, store)
+	if err := store.DeleteRelationship(relationship.ID); err == nil {
+		t.Fatal("DeleteRelationship() error = nil")
+	}
+	got, err := store.ListRelationships(relationship.SourceID)
+	if err != nil {
+		t.Fatalf("ListRelationships: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != relationship.ID {
+		t.Fatalf("relationships after rollback = %#v", got)
+	}
+	assertSQLiteHistoryRowCount(t, store, 1)
+}
+
 func TestSqliteHistoryConflictRejectsStaleBefore(t *testing.T) {
 	store := newTestStore(t)
 	fixedSQLiteHistoryTimes(store)
@@ -634,6 +797,127 @@ func TestSqliteHistoryConflictRejectsStaleBefore(t *testing.T) {
 		t.Fatalf("contact after conflict = %#v", got)
 	}
 	assertSQLiteHistoryRowCount(t, store, 1)
+}
+
+func TestSqliteHistoryConcurrentWriterReturnsConflict(t *testing.T) {
+	first, second := newSQLiteHistoryStorePair(t)
+	contact := newSQLiteHistoryContact(uuid.New(), "Committed Contact")
+	if err := first.CreateContact(contact); err != nil {
+		t.Fatalf("CreateContact: %v", err)
+	}
+	writer, err := first.db.Begin()
+	if err != nil {
+		t.Fatalf("begin reserved writer: %v", err)
+	}
+	if _, err := writer.Exec(
+		"UPDATE contacts SET name = ? WHERE id = ?",
+		"Uncommitted Contact",
+		contact.ID.String(),
+	); err != nil {
+		_ = writer.Rollback()
+		t.Fatalf("reserve writer: %v", err)
+	}
+
+	candidate, err := second.GetContact(contact.ID)
+	if err != nil {
+		_ = writer.Rollback()
+		t.Fatalf("GetContact second: %v", err)
+	}
+	candidate.Name = "Competing Contact"
+	candidate.UpdatedAt = candidate.UpdatedAt.Add(time.Hour)
+	err = second.UpdateContact(candidate)
+	if !errors.Is(err, ErrHistoryConflict) {
+		_ = writer.Rollback()
+		t.Fatalf("UpdateContact() error = %v, want ErrHistoryConflict", err)
+	}
+	if !strings.Contains(err.Error(), "begin history transaction") {
+		_ = writer.Rollback()
+		t.Fatalf("UpdateContact() error = %v, want immediate-begin context", err)
+	}
+	var sqliteError sqliteCodeError
+	if !errors.As(err, &sqliteError) || sqliteError.Code()&0xff != 5 {
+		_ = writer.Rollback()
+		t.Fatalf("UpdateContact() error = %v, want preserved SQLite BUSY error", err)
+	}
+	if err := writer.Rollback(); err != nil {
+		t.Fatalf("rollback reserved writer: %v", err)
+	}
+
+	got, err := second.GetContact(contact.ID)
+	if err != nil {
+		t.Fatalf("GetContact after conflict: %v", err)
+	}
+	if got.Name != contact.Name || !got.UpdatedAt.Equal(contact.UpdatedAt) {
+		t.Fatalf("contact after conflict = %#v, want original %#v", got, contact)
+	}
+	assertSQLiteHistoryRowCount(t, second, 1)
+}
+
+func newSQLiteHistoryStorePair(t *testing.T) (*SqliteStore, *SqliteStore) {
+	t.Helper()
+	databasePath := filepath.Join(t.TempDir(), "writer-conflict.db")
+	first, err := NewSqliteStore(databasePath, history.SourceCLI)
+	if err != nil {
+		t.Fatalf("NewSqliteStore first: %v", err)
+	}
+	t.Cleanup(func() { _ = first.Close() })
+	second, err := NewSqliteStore(databasePath, history.SourceCLI)
+	if err != nil {
+		t.Fatalf("NewSqliteStore second: %v", err)
+	}
+	t.Cleanup(func() { _ = second.Close() })
+	first.db.SetMaxOpenConns(1)
+	second.db.SetMaxOpenConns(1)
+	return first, second
+}
+
+func TestApplySQLiteHistoryEventErrorContext(t *testing.T) {
+	contact := newSQLiteHistoryContact(uuid.New(), "Missing Contact")
+	contactBefore := mustContactSnapshot(t, contact)
+	contact.Name = "Updated Missing Contact"
+	contactAfter := mustContactSnapshot(t, contact)
+	company := newSQLiteHistoryCompany(uuid.New(), "Missing Company")
+	companyBefore := mustCompanySnapshot(t, company)
+	relationship := &models.Relationship{
+		ID:        uuid.New(),
+		SourceID:  uuid.New(),
+		TargetID:  uuid.New(),
+		Type:      "missing",
+		CreatedAt: testHistoryTime,
+	}
+	relationshipBefore := mustRelationshipSnapshot(t, relationship)
+	tests := []struct {
+		name    string
+		event   *history.Event
+		wantErr error
+	}{
+		{name: "contact update", event: mustSQLiteHistoryEvent(t, history.EntityContact, contact.ID,
+			[]uuid.UUID{contact.ID}, history.ActionUpdate, contactBefore, contactAfter), wantErr: ErrContactNotFound},
+		{name: "company delete", event: mustSQLiteHistoryEvent(t, history.EntityCompany, company.ID,
+			[]uuid.UUID{company.ID}, history.ActionDelete, companyBefore, nil), wantErr: ErrCompanyNotFound},
+		{name: "relationship delete", event: mustSQLiteHistoryEvent(t, history.EntityRelationship, relationship.ID,
+			[]uuid.UUID{relationship.ID, relationship.SourceID, relationship.TargetID},
+			history.ActionDelete, relationshipBefore, nil), wantErr: ErrRelationshipNotFound},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newTestStore(t)
+			tx, err := store.db.Begin()
+			if err != nil {
+				t.Fatalf("Begin: %v", err)
+			}
+			defer func() { _ = tx.Rollback() }()
+			err = applySQLiteHistoryEvent(tx, tt.event)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("applySQLiteHistoryEvent() error = %v, want %v", err, tt.wantErr)
+			}
+			wantContext := fmt.Sprintf("apply %s %s %s", tt.event.Action, tt.event.EntityType, tt.event.EntityID)
+			if !strings.Contains(err.Error(), wantContext) {
+				t.Fatalf("applySQLiteHistoryEvent() error = %v, want context %q", err, wantContext)
+			}
+		})
+	}
 }
 
 func TestSqliteHistoryMutationSnapshotMatchesPersistedTimes(t *testing.T) {
@@ -751,6 +1035,56 @@ func newSQLiteHistoryCompany(id uuid.UUID, name string) *models.Company {
 	}
 }
 
+func mustSQLiteHistoryEvent(
+	t *testing.T,
+	entityType history.EntityType,
+	entityID uuid.UUID,
+	related []uuid.UUID,
+	action history.Action,
+	before json.RawMessage,
+	after json.RawMessage,
+) *history.Event {
+	t.Helper()
+	event, err := history.NewEvent(
+		entityType,
+		entityID,
+		related,
+		action,
+		history.SourceCLI,
+		before,
+		after,
+		testHistoryTime,
+	)
+	if err != nil {
+		t.Fatalf("NewEvent: %v", err)
+	}
+	return event
+}
+
+func nestedSQLiteLargeNumberFields() map[string]any {
+	return map[string]any{
+		"nested": []any{
+			map[string]any{"integer": json.Number("9007199254740993")},
+		},
+	}
+}
+
+func assertSQLiteNestedLargeNumber(t *testing.T, fields map[string]any) {
+	t.Helper()
+	nested, ok := fields["nested"].([]any)
+	if !ok || len(nested) != 1 {
+		t.Fatalf("nested field = %#v", fields["nested"])
+	}
+	object, ok := nested[0].(map[string]any)
+	if !ok {
+		t.Fatalf("nested object = %#v", nested[0])
+	}
+	number, ok := object["integer"].(json.Number)
+	if !ok || number.String() != "9007199254740993" {
+		t.Fatalf("nested integer = %#v, want exact json.Number", object["integer"])
+	}
+}
+
 func installFailHistoryTrigger(t *testing.T, store *SqliteStore) {
 	t.Helper()
 	_, err := store.db.Exec(`
@@ -772,6 +1106,28 @@ func assertSQLiteHistoryRowCount(t *testing.T, store *SqliteStore, want int) {
 	}
 	if got != want {
 		t.Fatalf("history event count = %d, want %d", got, want)
+	}
+}
+
+func assertSQLiteContactSearchCount(t *testing.T, store *SqliteStore, query string, want int) {
+	t.Helper()
+	got, err := store.ListContacts(&ContactFilter{Search: query})
+	if err != nil {
+		t.Fatalf("ListContacts search %q: %v", query, err)
+	}
+	if len(got) != want {
+		t.Fatalf("ListContacts search %q count = %d, want %d", query, len(got), want)
+	}
+}
+
+func assertSQLiteCompanySearchCount(t *testing.T, store *SqliteStore, query string, want int) {
+	t.Helper()
+	got, err := store.ListCompanies(&CompanyFilter{Search: query})
+	if err != nil {
+		t.Fatalf("ListCompanies search %q: %v", query, err)
+	}
+	if len(got) != want {
+		t.Fatalf("ListCompanies search %q count = %d, want %d", query, len(got), want)
 	}
 }
 

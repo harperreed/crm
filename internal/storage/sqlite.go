@@ -36,7 +36,7 @@ func NewSqliteStore(dbPath string, source history.Source) (*SqliteStore, error) 
 		return nil, fmt.Errorf("create parent dirs: %w", err)
 	}
 
-	dsn := dbPath + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)"
+	dsn := dbPath + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_txlock=immediate"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)

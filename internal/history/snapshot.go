@@ -240,7 +240,7 @@ func unmarshalSnapshot(snapshot json.RawMessage, destination any) error {
 	if err := validateSnapshotKeys(snapshot, requiredKeys); err != nil {
 		return err
 	}
-	decoder := json.NewDecoder(bytes.NewReader(snapshot))
+	decoder := newSnapshotDecoder(snapshot)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil {
 		return err
@@ -363,13 +363,19 @@ func snapshotObject(snapshot json.RawMessage) (map[string]any, error) {
 		return make(map[string]any), nil
 	}
 	var object map[string]any
-	if err := json.Unmarshal(snapshot, &object); err != nil {
+	if err := newSnapshotDecoder(snapshot).Decode(&object); err != nil {
 		return nil, err
 	}
 	if object == nil {
 		return make(map[string]any), nil
 	}
 	return object, nil
+}
+
+func newSnapshotDecoder(snapshot json.RawMessage) *json.Decoder {
+	decoder := json.NewDecoder(bytes.NewReader(snapshot))
+	decoder.UseNumber()
+	return decoder
 }
 
 func strictSnapshotObject(entityType EntityType, snapshot json.RawMessage) (map[string]any, error) {

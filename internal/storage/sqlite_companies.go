@@ -227,10 +227,10 @@ func scanCompany(row rowScanner) (*models.Company, error) {
 	c.CreatedAt = createdAt
 	c.UpdatedAt = updatedAt
 
-	if err := json.Unmarshal([]byte(fieldsStr), &c.Fields); err != nil {
+	if err := decodeSQLiteJSON(fieldsStr, &c.Fields); err != nil {
 		return nil, fmt.Errorf("unmarshal fields: %w", err)
 	}
-	if err := json.Unmarshal([]byte(tagsStr), &c.Tags); err != nil {
+	if err := decodeSQLiteJSON(tagsStr, &c.Tags); err != nil {
 		return nil, fmt.Errorf("unmarshal tags: %w", err)
 	}
 
@@ -267,10 +267,10 @@ func scanCompanyRows(rows *sql.Rows) ([]*models.Company, error) {
 		c.CreatedAt = createdAt
 		c.UpdatedAt = updatedAt
 
-		if err := json.Unmarshal([]byte(fieldsStr), &c.Fields); err != nil {
+		if err := decodeSQLiteJSON(fieldsStr, &c.Fields); err != nil {
 			return nil, fmt.Errorf("unmarshal fields: %w", err)
 		}
-		if err := json.Unmarshal([]byte(tagsStr), &c.Tags); err != nil {
+		if err := decodeSQLiteJSON(tagsStr, &c.Tags); err != nil {
 			return nil, fmt.Errorf("unmarshal tags: %w", err)
 		}
 
