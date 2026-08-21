@@ -132,7 +132,7 @@ func (s *MarkdownStore) writeCommittedHistoryEvent(event *history.Event) (return
 		}
 		return fmt.Errorf("publish committed history event %q: %w", path, err)
 	}
-	return nil
+	return syncMarkdownHistoryDirectory(s.historyEventsDir())
 }
 
 func marshalCommittedHistoryEvent(event *history.Event) ([]byte, error) {
@@ -175,9 +175,26 @@ func compareCommittedHistoryEvent(path string, expected *history.Event, expected
 		return fmt.Errorf("%w: canonicalize %s: %w", ErrHistoryCorrupt, path, err)
 	}
 	if bytes.Equal(canonicalExisting, expectedData) && existing.ID == expected.ID {
-		return nil
+		return syncMarkdownHistoryDirectory(filepath.Dir(path))
 	}
 	return fmt.Errorf("%w: event ID %s already has different committed content", ErrHistoryConflict, expected.ID)
+}
+
+func syncMarkdownHistoryDirectory(path string) (returnErr error) {
+	directory, err := os.Open(path) //nolint:gosec // path is the store's trusted history events directory.
+	if err != nil {
+		return fmt.Errorf("open history events directory for sync: %w", err)
+	}
+	defer func() {
+		if err := directory.Close(); err != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("close history events directory after sync: %w", err))
+		}
+	}()
+
+	if err := directory.Sync(); err != nil {
+		return fmt.Errorf("sync history events directory: %w", err)
+	}
+	return nil
 }
 
 func readFileWithoutFollowingSymlinks(path string) ([]byte, error) {

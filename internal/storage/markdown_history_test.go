@@ -26,6 +26,26 @@ func TestMarkdownHistorySchema(t *testing.T) {
 	}
 }
 
+func TestSyncMarkdownHistoryDirectory(t *testing.T) {
+	t.Run("syncs existing directory", func(t *testing.T) {
+		store := newTestMarkdownStore(t)
+		if err := syncMarkdownHistoryDirectory(store.historyEventsDir()); err != nil {
+			t.Fatalf("syncMarkdownHistoryDirectory: %v", err)
+		}
+	})
+
+	t.Run("reports open error", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "missing")
+		err := syncMarkdownHistoryDirectory(path)
+		if err == nil {
+			t.Fatal("syncMarkdownHistoryDirectory() error = nil")
+		}
+		if !strings.Contains(err.Error(), "open history events directory") {
+			t.Fatalf("syncMarkdownHistoryDirectory() error = %q", err)
+		}
+	})
+}
+
 func TestMarkdownListHistoryAndGetHistoryEvent(t *testing.T) {
 	store := newTestMarkdownStore(t)
 	runHistoryReadContract(t, historyReadBackend{
