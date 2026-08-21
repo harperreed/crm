@@ -55,6 +55,17 @@ crm link <contact-id-or-prefix> <company-id-or-prefix> \
 
 Contacts and companies support `add`, `list`, `show`, `edit`, and `rm`. List commands accept `--tag`, `--search`, and `--limit`. IDs shown by the CLI may be shortened to a unique prefix of at least six characters.
 
+Inspect an entity's timeline, then show one event's full before and after snapshots:
+
+```bash
+crm history <entity-id-or-prefix>
+crm history show <event-id-or-prefix>
+```
+
+`crm history` lists up to 20 events by default; pass `--limit` to change the count. Contact and company timelines include link and unlink events involving that entity. Each event records whether the change came from the CLI (`cli`) or MCP (`mcp`).
+
+History starts with changes made after upgrading; CRM does not create baseline events for existing records. Events are immutable and kept indefinitely. Deleting a contact, company, or relationship removes the current record but keeps its historical snapshots, including any personal data they contain.
+
 Run `crm help`, `crm contact --help`, or `crm company --help` for the full command reference.
 
 ## Configure storage
@@ -99,7 +110,7 @@ For project-scoped Claude Code setup, save this configuration as `.mcp.json` in 
 }
 ```
 
-The server exposes 12 tools for contact and company CRUD plus linking and unlinking. It also exposes contact and company resource templates and three prompts for contact creation, relationship mapping, and cross-entity search.
+The server exposes 14 tools for contact and company CRUD, linking and unlinking, and read-only history. Use `list_history` for an entity timeline and `get_history_event` for a full event. It also exposes contact and company resource templates and three prompts for contact creation, relationship mapping, and cross-entity search.
 
 Install the bundled Claude Code skill with:
 

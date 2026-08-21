@@ -56,7 +56,14 @@ The snapshot command replaces `dist/` with generated release archives, checksums
 - The default database is `$XDG_DATA_HOME/crm/crm.db` when set, otherwise `~/.local/share/crm/crm.db`.
 - `internal/config` and `internal/storage` handle XDG paths directly.
 - Cobra provides the CLI. `crm --version` and `crm version` are both public.
+- History records new mutations only. CLI mutations use event source `cli`; mutations handled by `crm mcp` use `mcp`.
 - Pre-commit hooks enforce formatting, linting, tests, and vet for applicable files.
+
+## History Storage
+
+SQLite stores events in `history_events` and their timeline memberships in `history_event_entities`. Each mutation writes current state and history in one transaction, so both changes commit or both roll back.
+
+The Markdown backend stores immutable event JSON in `_history/events/`. Its write-ahead log writes each mutation to `_history/pending/` before changing current state. Opening the store replays or finalizes pending events when current state matches the recorded before or after snapshot; it rejects unexplained conflicts. A process-local mutex serializes Markdown writes and recovery, but there is no cross-process writer lock. Run only one Markdown-writing CRM process at a time.
 
 ## Direct Dependencies
 

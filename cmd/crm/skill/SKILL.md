@@ -22,6 +22,12 @@ A lightweight CRM for managing contacts, companies, and relationships. Access vi
 - `mcp__crm__link` — Create a relationship. Required: `source_id`, `target_id`, `type`. Optional: `context`.
 - `mcp__crm__unlink` — Delete a relationship. Required: `id`.
 
+### History
+- `mcp__crm__list_history` — List an entity's history newest first. Required: `entity_id` (full UUID or prefix of at least 6 characters). Optional: `limit` (default 20, maximum 100). Contact and company timelines include their link and unlink events.
+- `mcp__crm__get_history_event` — Get one event with full before and after snapshots. Required: `event_id` (full UUID or prefix of at least 6 characters).
+
+History records whether each mutation came from `cli` or `mcp`. It starts with changes made after CRM was upgraded to a history-capable version, so an empty or short timeline does not describe changes made before then. Deleted records remain visible in immutable history indefinitely, including any personal data in their snapshots.
+
 ## Usage Patterns
 
 ### Add a contact and link to a company
@@ -42,6 +48,12 @@ A lightweight CRM for managing contacts, companies, and relationships. Access vi
 1. mcp__crm__update_contact(id: "<id>", email: "jane.new@acme.com")
 2. mcp__crm__unlink(id: "<relationship_id>")
 3. mcp__crm__delete_contact(id: "<id>")
+```
+
+### Inspect changes
+```
+1. mcp__crm__list_history(entity_id: "<entity_id_or_prefix>")
+2. mcp__crm__get_history_event(event_id: "<event_id_or_prefix>")
 ```
 
 ## MCP Server Configuration
