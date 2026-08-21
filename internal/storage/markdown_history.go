@@ -816,17 +816,60 @@ func exactYAMLNode(value any) (*yaml.Node, error) {
 }
 
 func exactYAMLValue(node *yaml.Node) (any, error) {
-	return exactYAMLValueWithAliases(node, make(map[*yaml.Node]bool))
+	return exactYAMLValueWithAliases(node, make(map[*yaml.Node]bool), &exactYAMLDecodeBudget{})
 }
 
-func exactYAMLValueWithAliases(node *yaml.Node, activeAliases map[*yaml.Node]bool) (any, error) {
+type exactYAMLDecodeBudget struct {
+	decodeCount int
+	aliasCount  int
+	aliasDepth  int
+}
+
+const (
+	// These limits mirror yaml.v3's decoder so custom exact-number fields keep its alias-expansion protection.
+	exactYAMLAliasRatioRangeLow  = 400000
+	exactYAMLAliasRatioRangeHigh = 4000000
+	exactYAMLAliasRatioRange     = float64(exactYAMLAliasRatioRangeHigh - exactYAMLAliasRatioRangeLow)
+)
+
+func (budget *exactYAMLDecodeBudget) visit() error {
+	budget.decodeCount++
+	if budget.aliasDepth > 0 {
+		budget.aliasCount++
+	}
+	if budget.aliasCount > 100 && budget.decodeCount > 1000 &&
+		float64(budget.aliasCount)/float64(budget.decodeCount) > allowedExactYAMLAliasRatio(budget.decodeCount) {
+		return errors.New("document contains excessive aliasing")
+	}
+	return nil
+}
+
+func allowedExactYAMLAliasRatio(decodeCount int) float64 {
+	switch {
+	case decodeCount <= exactYAMLAliasRatioRangeLow:
+		return 0.99
+	case decodeCount >= exactYAMLAliasRatioRangeHigh:
+		return 0.10
+	default:
+		return 0.99 - 0.89*(float64(decodeCount-exactYAMLAliasRatioRangeLow)/exactYAMLAliasRatioRange)
+	}
+}
+
+func exactYAMLValueWithAliases(
+	node *yaml.Node,
+	activeAliases map[*yaml.Node]bool,
+	budget *exactYAMLDecodeBudget,
+) (any, error) {
+	if err := budget.visit(); err != nil {
+		return nil, err
+	}
 	switch node.Kind {
 	case yaml.MappingNode:
-		return exactYAMLMappingValue(node, activeAliases)
+		return exactYAMLMappingValue(node, activeAliases, budget)
 	case yaml.SequenceNode:
 		result := make([]any, len(node.Content))
 		for index, child := range node.Content {
-			value, err := exactYAMLValueWithAliases(child, activeAliases)
+			value, err := exactYAMLValueWithAliases(child, activeAliases, budget)
 			if err != nil {
 				return nil, err
 			}
@@ -834,7 +877,7 @@ func exactYAMLValueWithAliases(node *yaml.Node, activeAliases map[*yaml.Node]boo
 		}
 		return result, nil
 	case yaml.AliasNode:
-		return exactYAMLAliasValue(node, activeAliases)
+		return exactYAMLAliasValue(node, activeAliases, budget)
 	case yaml.ScalarNode:
 		return exactYAMLScalarValue(node)
 	default:
@@ -842,7 +885,11 @@ func exactYAMLValueWithAliases(node *yaml.Node, activeAliases map[*yaml.Node]boo
 	}
 }
 
-func exactYAMLMappingValue(node *yaml.Node, activeAliases map[*yaml.Node]bool) (map[string]any, error) {
+func exactYAMLMappingValue(
+	node *yaml.Node,
+	activeAliases map[*yaml.Node]bool,
+	budget *exactYAMLDecodeBudget,
+) (map[string]any, error) {
 	if err := rejectDuplicateYAMLKeys(node); err != nil {
 		return nil, err
 	}
@@ -850,18 +897,21 @@ func exactYAMLMappingValue(node *yaml.Node, activeAliases map[*yaml.Node]bool) (
 	var merge *yaml.Node
 	for index := 0; index < len(node.Content); index += 2 {
 		keyNode := node.Content[index]
+		if err := budget.visit(); err != nil {
+			return nil, err
+		}
 		if isExactYAMLMerge(keyNode) {
 			merge = node.Content[index+1]
 			continue
 		}
-		value, err := exactYAMLValueWithAliases(node.Content[index+1], activeAliases)
+		value, err := exactYAMLValueWithAliases(node.Content[index+1], activeAliases, budget)
 		if err != nil {
 			return nil, err
 		}
 		result[keyNode.Value] = value
 	}
 	if merge != nil {
-		if err := mergeExactYAMLMapping(result, merge, activeAliases); err != nil {
+		if err := mergeExactYAMLMapping(result, merge, activeAliases, budget); err != nil {
 			return nil, err
 		}
 	}
@@ -881,7 +931,11 @@ func rejectDuplicateYAMLKeys(node *yaml.Node) error {
 	return nil
 }
 
-func exactYAMLAliasValue(node *yaml.Node, activeAliases map[*yaml.Node]bool) (any, error) {
+func exactYAMLAliasValue(
+	node *yaml.Node,
+	activeAliases map[*yaml.Node]bool,
+	budget *exactYAMLDecodeBudget,
+) (any, error) {
 	if node.Alias == nil {
 		return nil, errors.New("YAML alias has no target")
 	}
@@ -890,10 +944,17 @@ func exactYAMLAliasValue(node *yaml.Node, activeAliases map[*yaml.Node]bool) (an
 	}
 	activeAliases[node.Alias] = true
 	defer delete(activeAliases, node.Alias)
-	return exactYAMLValueWithAliases(node.Alias, activeAliases)
+	budget.aliasDepth++
+	defer func() { budget.aliasDepth-- }()
+	return exactYAMLValueWithAliases(node.Alias, activeAliases, budget)
 }
 
-func mergeExactYAMLMapping(result map[string]any, node *yaml.Node, activeAliases map[*yaml.Node]bool) error {
+func mergeExactYAMLMapping(
+	result map[string]any,
+	node *yaml.Node,
+	activeAliases map[*yaml.Node]bool,
+	budget *exactYAMLDecodeBudget,
+) error {
 	sources := []*yaml.Node{node}
 	if node.Kind == yaml.SequenceNode {
 		sources = node.Content
@@ -902,7 +963,7 @@ func mergeExactYAMLMapping(result map[string]any, node *yaml.Node, activeAliases
 		if source.Kind != yaml.MappingNode && (source.Kind != yaml.AliasNode || source.Alias == nil || source.Alias.Kind != yaml.MappingNode) {
 			return errors.New("map merge requires map or sequence of maps as the value")
 		}
-		value, err := exactYAMLValueWithAliases(source, activeAliases)
+		value, err := exactYAMLValueWithAliases(source, activeAliases, budget)
 		if err != nil {
 			return err
 		}

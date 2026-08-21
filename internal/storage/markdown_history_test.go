@@ -800,6 +800,23 @@ func TestMarkdownExactYAMLRejectsAliasCycles(t *testing.T) {
 	}
 }
 
+func TestMarkdownExactYAMLRejectsExcessiveAliasExpansion(t *testing.T) {
+	var document struct {
+		Fields exactYAMLFields `yaml:"fields"`
+	}
+	data := []byte("fields:\n" +
+		"  a: &a [0,0,0,0,0,0,0,0,0]\n" +
+		"  b: &b [*a,*a,*a,*a,*a,*a,*a,*a,*a]\n" +
+		"  c: &c [*b,*b,*b,*b,*b,*b,*b,*b,*b]\n" +
+		"  d: &d [*c,*c,*c,*c,*c,*c,*c,*c,*c]\n" +
+		"  e: &e [*d,*d,*d,*d,*d,*d,*d,*d,*d]\n" +
+		"  f: &f [*e,*e,*e,*e,*e,*e,*e,*e,*e]\n")
+	err := strictYAMLUnmarshal(data, &document)
+	if err == nil || !strings.Contains(err.Error(), "document contains excessive aliasing") {
+		t.Fatalf("strictYAMLUnmarshal expansion error = %v, want excessive aliasing", err)
+	}
+}
+
 func TestMarkdownRecoveryAppliesPendingUpdate(t *testing.T) {
 	dataDir := t.TempDir()
 	store, err := NewMarkdownStore(dataDir, history.SourceCLI)
