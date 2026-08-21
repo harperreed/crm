@@ -134,6 +134,111 @@ func TestSQLiteGetHistoryEventReportsCorruptRelatedEntity(t *testing.T) {
 	}
 }
 
+func TestSQLiteScannersRejectTrailingJSON(t *testing.T) {
+	for _, entityType := range []history.EntityType{history.EntityContact, history.EntityCompany} {
+		for _, column := range []string{"fields", "tags"} {
+			t.Run(string(entityType)+" "+column, func(t *testing.T) {
+				testSQLiteScannerRejectsTrailingJSON(t, entityType, column)
+			})
+		}
+	}
+}
+
+func TestDecodeSQLiteJSONAcceptsSurroundingWhitespace(t *testing.T) {
+	var fields map[string]any
+	err := decodeSQLiteJSON(" \n\t{\"integer\":9007199254740993}\r ", &fields)
+	if err != nil {
+		t.Fatalf("decodeSQLiteJSON: %v", err)
+	}
+	number, ok := fields["integer"].(json.Number)
+	if !ok || number.String() != "9007199254740993" {
+		t.Fatalf("integer = %#v, want exact json.Number", fields["integer"])
+	}
+}
+
+func testSQLiteScannerRejectsTrailingJSON(t *testing.T, entityType history.EntityType, column string) {
+	t.Helper()
+	store := newTestStore(t)
+	entityID := createSQLiteJSONCorruptionFixture(t, store, entityType)
+	corruptSQLiteJSONColumn(t, store, entityType, entityID, column)
+
+	err := scanSQLiteCorruptEntity(store, entityType, entityID)
+	if err == nil || !strings.Contains(err.Error(), "unmarshal "+column) {
+		t.Fatalf("entity scan error = %v, want unmarshal %s context", err, column)
+	}
+	tx, err := store.db.Begin()
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = currentSQLiteSnapshot(tx, &history.Event{EntityType: entityType, EntityID: entityID})
+	wantContext := "read current " + string(entityType) + " snapshot"
+	if err == nil || !strings.Contains(err.Error(), wantContext) || !strings.Contains(err.Error(), "unmarshal "+column) {
+		t.Fatalf("currentSQLiteSnapshot() error = %v, want %q and unmarshal %s context", err, wantContext, column)
+	}
+}
+
+func createSQLiteJSONCorruptionFixture(
+	t *testing.T,
+	store *SqliteStore,
+	entityType history.EntityType,
+) uuid.UUID {
+	t.Helper()
+	entityID := uuid.New()
+	switch entityType {
+	case history.EntityContact:
+		if err := store.CreateContact(newSQLiteHistoryContact(entityID, "Corrupt JSON Contact")); err != nil {
+			t.Fatalf("CreateContact: %v", err)
+		}
+	case history.EntityCompany:
+		if err := store.CreateCompany(newSQLiteHistoryCompany(entityID, "Corrupt JSON Company")); err != nil {
+			t.Fatalf("CreateCompany: %v", err)
+		}
+	default:
+		t.Fatalf("unsupported entity type %q", entityType)
+	}
+	return entityID
+}
+
+func corruptSQLiteJSONColumn(
+	t *testing.T,
+	store *SqliteStore,
+	entityType history.EntityType,
+	entityID uuid.UUID,
+	column string,
+) {
+	t.Helper()
+	var err error
+	switch {
+	case entityType == history.EntityContact && column == "fields":
+		_, err = store.db.Exec("UPDATE contacts SET fields = ? WHERE id = ?", `{} trailing`, entityID.String())
+	case entityType == history.EntityContact && column == "tags":
+		_, err = store.db.Exec("UPDATE contacts SET tags = ? WHERE id = ?", `[] trailing`, entityID.String())
+	case entityType == history.EntityCompany && column == "fields":
+		_, err = store.db.Exec("UPDATE companies SET fields = ? WHERE id = ?", `{} trailing`, entityID.String())
+	case entityType == history.EntityCompany && column == "tags":
+		_, err = store.db.Exec("UPDATE companies SET tags = ? WHERE id = ?", `[] trailing`, entityID.String())
+	default:
+		t.Fatalf("unsupported corruption target %s.%s", entityType, column)
+	}
+	if err != nil {
+		t.Fatalf("corrupt %s %s: %v", entityType, column, err)
+	}
+}
+
+func scanSQLiteCorruptEntity(store *SqliteStore, entityType history.EntityType, entityID uuid.UUID) error {
+	switch entityType {
+	case history.EntityContact:
+		_, err := store.GetContact(entityID)
+		return err
+	case history.EntityCompany:
+		_, err := store.GetCompany(entityID)
+		return err
+	default:
+		return fmt.Errorf("unsupported entity type %q", entityType)
+	}
+}
+
 func TestSqliteHistoryMutationContact(t *testing.T) {
 	store := newTestStore(t)
 	eventTimes := fixedSQLiteHistoryTimes(store)

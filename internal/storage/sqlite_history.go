@@ -24,7 +24,11 @@ type rowScanner interface {
 }
 
 func decodeSQLiteJSON(value string, destination any) error {
-	decoder := json.NewDecoder(bytes.NewReader([]byte(value)))
+	encoded := []byte(value)
+	if !json.Valid(encoded) {
+		return errors.New("invalid JSON value")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.UseNumber()
 	if err := decoder.Decode(destination); err != nil {
 		return err
