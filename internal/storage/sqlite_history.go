@@ -22,6 +22,235 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
+func (s *SqliteStore) commitHistoryEvent(event *history.Event) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin history transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := event.Validate(); err != nil {
+		return fmt.Errorf("validate history event: %w", err)
+	}
+	current, err := currentSQLiteSnapshot(tx, event)
+	if err != nil {
+		return err
+	}
+	equal, err := history.EqualSnapshots(event.EntityType, current, event.Before)
+	if err != nil {
+		return fmt.Errorf("compare current %s snapshot: %w", event.EntityType, err)
+	}
+	if !equal {
+		return fmt.Errorf("%w: current %s %s does not match event before snapshot", ErrHistoryConflict, event.EntityType, event.EntityID)
+	}
+	if err := applySQLiteHistoryEvent(tx, event); err != nil {
+		return err
+	}
+	if err := insertSQLiteHistoryEvent(tx, event); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit history transaction: %w", err)
+	}
+	return nil
+}
+
+func currentSQLiteSnapshot(tx *sql.Tx, event *history.Event) (json.RawMessage, error) {
+	switch event.EntityType {
+	case history.EntityContact:
+		contact, err := scanContact(tx.QueryRow(`
+			SELECT id, name, email, phone, fields, tags, created_at, updated_at
+			FROM contacts WHERE id = ?`, event.EntityID.String()))
+		if errors.Is(err, ErrContactNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read current contact snapshot: %w", err)
+		}
+		snapshot, err := sqliteContactSnapshot(contact)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot current contact: %w", err)
+		}
+		return snapshot, nil
+	case history.EntityCompany:
+		company, err := scanCompany(tx.QueryRow(`
+			SELECT id, name, domain, fields, tags, created_at, updated_at
+			FROM companies WHERE id = ?`, event.EntityID.String()))
+		if errors.Is(err, ErrCompanyNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read current company snapshot: %w", err)
+		}
+		snapshot, err := sqliteCompanySnapshot(company)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot current company: %w", err)
+		}
+		return snapshot, nil
+	case history.EntityRelationship:
+		relationship, err := scanRelationship(tx.QueryRow(`
+			SELECT id, source_id, target_id, type, context, created_at
+			FROM relationships WHERE id = ?`, event.EntityID.String()))
+		if errors.Is(err, ErrRelationshipNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read current relationship snapshot: %w", err)
+		}
+		snapshot, err := sqliteRelationshipSnapshot(relationship)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot current relationship: %w", err)
+		}
+		return snapshot, nil
+	default:
+		return nil, fmt.Errorf("unsupported history entity type %q", event.EntityType)
+	}
+}
+
+func applySQLiteHistoryEvent(tx *sql.Tx, event *history.Event) error {
+	switch event.EntityType {
+	case history.EntityContact:
+		return applySQLiteContactHistoryEvent(tx, event)
+	case history.EntityCompany:
+		return applySQLiteCompanyHistoryEvent(tx, event)
+	case history.EntityRelationship:
+		return applySQLiteRelationshipHistoryEvent(tx, event)
+	default:
+		return fmt.Errorf("unsupported history entity type %q", event.EntityType)
+	}
+}
+
+func applySQLiteContactHistoryEvent(tx *sql.Tx, event *history.Event) error {
+	if event.Action == history.ActionDelete {
+		return execSQLiteHistoryMutation(
+			tx,
+			"DELETE FROM contacts WHERE id = ?",
+			ErrContactNotFound,
+			event.EntityID.String(),
+		)
+	}
+	contact, err := history.ContactFromSnapshot(event.After)
+	if err != nil {
+		return fmt.Errorf("decode contact history snapshot: %w", err)
+	}
+	fields, err := json.Marshal(contact.Fields)
+	if err != nil {
+		return fmt.Errorf("marshal contact fields: %w", err)
+	}
+	tags, err := json.Marshal(contact.Tags)
+	if err != nil {
+		return fmt.Errorf("marshal contact tags: %w", err)
+	}
+	if event.Action == history.ActionCreate {
+		_, err = tx.Exec(`
+			INSERT INTO contacts (id, name, email, phone, fields, tags, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			contact.ID.String(), contact.Name, contact.Email, contact.Phone,
+			string(fields), string(tags), contact.CreatedAt.UTC(), contact.UpdatedAt.UTC(),
+		)
+		if err != nil {
+			return fmt.Errorf("insert contact: %w", err)
+		}
+		return nil
+	}
+	return execSQLiteHistoryMutation(
+		tx,
+		`UPDATE contacts SET name=?, email=?, phone=?, fields=?, tags=?, updated_at=? WHERE id=?`,
+		ErrContactNotFound,
+		contact.Name, contact.Email, contact.Phone, string(fields), string(tags),
+		contact.UpdatedAt.UTC(), contact.ID.String(),
+	)
+}
+
+func applySQLiteCompanyHistoryEvent(tx *sql.Tx, event *history.Event) error {
+	if event.Action == history.ActionDelete {
+		return execSQLiteHistoryMutation(
+			tx,
+			"DELETE FROM companies WHERE id = ?",
+			ErrCompanyNotFound,
+			event.EntityID.String(),
+		)
+	}
+	company, err := history.CompanyFromSnapshot(event.After)
+	if err != nil {
+		return fmt.Errorf("decode company history snapshot: %w", err)
+	}
+	fields, err := json.Marshal(company.Fields)
+	if err != nil {
+		return fmt.Errorf("marshal company fields: %w", err)
+	}
+	tags, err := json.Marshal(company.Tags)
+	if err != nil {
+		return fmt.Errorf("marshal company tags: %w", err)
+	}
+	if event.Action == history.ActionCreate {
+		_, err = tx.Exec(`
+			INSERT INTO companies (id, name, domain, fields, tags, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			company.ID.String(), company.Name, company.Domain, string(fields), string(tags),
+			company.CreatedAt.UTC(), company.UpdatedAt.UTC(),
+		)
+		if err != nil {
+			return fmt.Errorf("insert company: %w", err)
+		}
+		return nil
+	}
+	return execSQLiteHistoryMutation(
+		tx,
+		`UPDATE companies SET name=?, domain=?, fields=?, tags=?, updated_at=? WHERE id=?`,
+		ErrCompanyNotFound,
+		company.Name, company.Domain, string(fields), string(tags), company.UpdatedAt.UTC(), company.ID.String(),
+	)
+}
+
+func applySQLiteRelationshipHistoryEvent(tx *sql.Tx, event *history.Event) error {
+	if event.Action == history.ActionDelete {
+		return execSQLiteHistoryMutation(
+			tx,
+			"DELETE FROM relationships WHERE id = ?",
+			ErrRelationshipNotFound,
+			event.EntityID.String(),
+		)
+	}
+	if event.Action != history.ActionCreate {
+		return fmt.Errorf("unsupported relationship history action %q", event.Action)
+	}
+	relationship, err := history.RelationshipFromSnapshot(event.After)
+	if err != nil {
+		return fmt.Errorf("decode relationship history snapshot: %w", err)
+	}
+	_, err = tx.Exec(`
+		INSERT INTO relationships (id, source_id, target_id, type, context, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		relationship.ID.String(), relationship.SourceID.String(), relationship.TargetID.String(),
+		relationship.Type, relationship.Context, relationship.CreatedAt.UTC(),
+	)
+	if err != nil {
+		return fmt.Errorf("insert relationship: %w", err)
+	}
+	return nil
+}
+
+func execSQLiteHistoryMutation(
+	tx *sql.Tx,
+	query string,
+	notFound error,
+	args ...any,
+) error {
+	result, err := tx.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if count == 0 {
+		return notFound
+	}
+	return nil
+}
+
 func insertSQLiteHistoryEvent(tx *sql.Tx, event *history.Event) error {
 	if err := event.Validate(); err != nil {
 		return fmt.Errorf("validate history event: %w", err)

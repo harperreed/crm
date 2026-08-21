@@ -11,31 +11,30 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/models"
 )
 
 // CreateCompany inserts a new company, marshaling Fields and Tags to JSON.
 func (s *SqliteStore) CreateCompany(c *models.Company) error {
-	fieldsJSON, err := json.Marshal(c.Fields)
+	after, err := sqliteCompanySnapshot(c)
 	if err != nil {
-		return fmt.Errorf("marshal fields: %w", err)
+		return fmt.Errorf("snapshot company: %w", err)
 	}
-	tagsJSON, err := json.Marshal(c.Tags)
-	if err != nil {
-		return fmt.Errorf("marshal tags: %w", err)
-	}
-
-	_, err = s.db.Exec(`
-		INSERT INTO companies (id, name, domain, fields, tags, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		c.ID.String(), c.Name, c.Domain,
-		string(fieldsJSON), string(tagsJSON),
-		c.CreatedAt.UTC(), c.UpdatedAt.UTC(),
+	event, err := history.NewEvent(
+		history.EntityCompany,
+		c.ID,
+		[]uuid.UUID{c.ID},
+		history.ActionCreate,
+		s.source,
+		nil,
+		after,
+		s.now(),
 	)
 	if err != nil {
-		return fmt.Errorf("insert company: %w", err)
+		return fmt.Errorf("create company history event: %w", err)
 	}
-	return nil
+	return s.commitHistoryEvent(event)
 }
 
 // GetCompany retrieves a company by UUID, returning ErrCompanyNotFound on miss.
@@ -142,56 +141,70 @@ func (s *SqliteStore) listCompaniesFTS(filter *CompanyFilter) ([]*models.Company
 // UpdateCompany updates an existing company, returning ErrCompanyNotFound
 // if no row matches.
 func (s *SqliteStore) UpdateCompany(c *models.Company) error {
-	fieldsJSON, err := json.Marshal(c.Fields)
+	current, err := s.GetCompany(c.ID)
 	if err != nil {
-		return fmt.Errorf("marshal fields: %w", err)
+		return err
 	}
-	tagsJSON, err := json.Marshal(c.Tags)
+	before, err := sqliteCompanySnapshot(current)
 	if err != nil {
-		return fmt.Errorf("marshal tags: %w", err)
+		return fmt.Errorf("snapshot current company: %w", err)
 	}
-
-	res, err := s.db.Exec(`
-		UPDATE companies SET name=?, domain=?, fields=?, tags=?, updated_at=?
-		WHERE id=?`,
-		c.Name, c.Domain,
-		string(fieldsJSON), string(tagsJSON),
-		c.UpdatedAt.UTC(), c.ID.String(),
+	after, err := sqliteCompanySnapshot(c)
+	if err != nil {
+		return fmt.Errorf("snapshot updated company: %w", err)
+	}
+	changed, err := history.ChangedFields(history.EntityCompany, before, after)
+	if err != nil {
+		return fmt.Errorf("compare company snapshots: %w", err)
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	event, err := history.NewEvent(
+		history.EntityCompany,
+		c.ID,
+		[]uuid.UUID{c.ID},
+		history.ActionUpdate,
+		s.source,
+		before,
+		after,
+		s.now(),
 	)
 	if err != nil {
-		return fmt.Errorf("update company: %w", err)
+		return fmt.Errorf("create company history event: %w", err)
 	}
-
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("rows affected: %w", err)
-	}
-	if n == 0 {
-		return ErrCompanyNotFound
-	}
-	return nil
+	return s.commitHistoryEvent(event)
 }
 
 // DeleteCompany removes a company by UUID, returning ErrCompanyNotFound
 // if no row matches.
 func (s *SqliteStore) DeleteCompany(id uuid.UUID) error {
-	res, err := s.db.Exec("DELETE FROM companies WHERE id = ?", id.String())
+	current, err := s.GetCompany(id)
 	if err != nil {
-		return fmt.Errorf("delete company: %w", err)
+		return err
 	}
-
-	n, err := res.RowsAffected()
+	before, err := sqliteCompanySnapshot(current)
 	if err != nil {
-		return fmt.Errorf("rows affected: %w", err)
+		return fmt.Errorf("snapshot company: %w", err)
 	}
-	if n == 0 {
-		return ErrCompanyNotFound
+	event, err := history.NewEvent(
+		history.EntityCompany,
+		id,
+		[]uuid.UUID{id},
+		history.ActionDelete,
+		s.source,
+		before,
+		nil,
+		s.now(),
+	)
+	if err != nil {
+		return fmt.Errorf("create company history event: %w", err)
 	}
-	return nil
+	return s.commitHistoryEvent(event)
 }
 
 // scanCompany scans a single company row and unmarshals JSON fields.
-func scanCompany(row *sql.Row) (*models.Company, error) {
+func scanCompany(row rowScanner) (*models.Company, error) {
 	var c models.Company
 	var idStr, fieldsStr, tagsStr string
 	var createdAt, updatedAt time.Time
@@ -220,6 +233,13 @@ func scanCompany(row *sql.Row) (*models.Company, error) {
 	}
 
 	return &c, nil
+}
+
+func sqliteCompanySnapshot(company *models.Company) (json.RawMessage, error) {
+	normalized := *company
+	normalized.CreatedAt = company.CreatedAt.UTC()
+	normalized.UpdatedAt = company.UpdatedAt.UTC()
+	return history.SnapshotCompany(&normalized)
 }
 
 // scanCompanyRows scans multiple company rows and closes the result set.

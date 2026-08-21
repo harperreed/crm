@@ -11,31 +11,30 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/models"
 )
 
 // CreateContact inserts a new contact, marshaling Fields and Tags to JSON.
 func (s *SqliteStore) CreateContact(c *models.Contact) error {
-	fieldsJSON, err := json.Marshal(c.Fields)
+	after, err := sqliteContactSnapshot(c)
 	if err != nil {
-		return fmt.Errorf("marshal fields: %w", err)
+		return fmt.Errorf("snapshot contact: %w", err)
 	}
-	tagsJSON, err := json.Marshal(c.Tags)
-	if err != nil {
-		return fmt.Errorf("marshal tags: %w", err)
-	}
-
-	_, err = s.db.Exec(`
-		INSERT INTO contacts (id, name, email, phone, fields, tags, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.ID.String(), c.Name, c.Email, c.Phone,
-		string(fieldsJSON), string(tagsJSON),
-		c.CreatedAt.UTC(), c.UpdatedAt.UTC(),
+	event, err := history.NewEvent(
+		history.EntityContact,
+		c.ID,
+		[]uuid.UUID{c.ID},
+		history.ActionCreate,
+		s.source,
+		nil,
+		after,
+		s.now(),
 	)
 	if err != nil {
-		return fmt.Errorf("insert contact: %w", err)
+		return fmt.Errorf("create contact history event: %w", err)
 	}
-	return nil
+	return s.commitHistoryEvent(event)
 }
 
 // GetContact retrieves a contact by UUID, returning ErrContactNotFound on miss.
@@ -142,56 +141,70 @@ func (s *SqliteStore) listContactsFTS(filter *ContactFilter) ([]*models.Contact,
 // UpdateContact updates an existing contact, returning ErrContactNotFound
 // if no row matches.
 func (s *SqliteStore) UpdateContact(c *models.Contact) error {
-	fieldsJSON, err := json.Marshal(c.Fields)
+	current, err := s.GetContact(c.ID)
 	if err != nil {
-		return fmt.Errorf("marshal fields: %w", err)
+		return err
 	}
-	tagsJSON, err := json.Marshal(c.Tags)
+	before, err := sqliteContactSnapshot(current)
 	if err != nil {
-		return fmt.Errorf("marshal tags: %w", err)
+		return fmt.Errorf("snapshot current contact: %w", err)
 	}
-
-	res, err := s.db.Exec(`
-		UPDATE contacts SET name=?, email=?, phone=?, fields=?, tags=?, updated_at=?
-		WHERE id=?`,
-		c.Name, c.Email, c.Phone,
-		string(fieldsJSON), string(tagsJSON),
-		c.UpdatedAt.UTC(), c.ID.String(),
+	after, err := sqliteContactSnapshot(c)
+	if err != nil {
+		return fmt.Errorf("snapshot updated contact: %w", err)
+	}
+	changed, err := history.ChangedFields(history.EntityContact, before, after)
+	if err != nil {
+		return fmt.Errorf("compare contact snapshots: %w", err)
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	event, err := history.NewEvent(
+		history.EntityContact,
+		c.ID,
+		[]uuid.UUID{c.ID},
+		history.ActionUpdate,
+		s.source,
+		before,
+		after,
+		s.now(),
 	)
 	if err != nil {
-		return fmt.Errorf("update contact: %w", err)
+		return fmt.Errorf("create contact history event: %w", err)
 	}
-
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("rows affected: %w", err)
-	}
-	if n == 0 {
-		return ErrContactNotFound
-	}
-	return nil
+	return s.commitHistoryEvent(event)
 }
 
 // DeleteContact removes a contact by UUID, returning ErrContactNotFound
 // if no row matches.
 func (s *SqliteStore) DeleteContact(id uuid.UUID) error {
-	res, err := s.db.Exec("DELETE FROM contacts WHERE id = ?", id.String())
+	current, err := s.GetContact(id)
 	if err != nil {
-		return fmt.Errorf("delete contact: %w", err)
+		return err
 	}
-
-	n, err := res.RowsAffected()
+	before, err := sqliteContactSnapshot(current)
 	if err != nil {
-		return fmt.Errorf("rows affected: %w", err)
+		return fmt.Errorf("snapshot contact: %w", err)
 	}
-	if n == 0 {
-		return ErrContactNotFound
+	event, err := history.NewEvent(
+		history.EntityContact,
+		id,
+		[]uuid.UUID{id},
+		history.ActionDelete,
+		s.source,
+		before,
+		nil,
+		s.now(),
+	)
+	if err != nil {
+		return fmt.Errorf("create contact history event: %w", err)
 	}
-	return nil
+	return s.commitHistoryEvent(event)
 }
 
 // scanContact scans a single contact row and unmarshals JSON fields.
-func scanContact(row *sql.Row) (*models.Contact, error) {
+func scanContact(row rowScanner) (*models.Contact, error) {
 	var c models.Contact
 	var idStr, fieldsStr, tagsStr string
 	var createdAt, updatedAt time.Time
@@ -220,6 +233,13 @@ func scanContact(row *sql.Row) (*models.Contact, error) {
 	}
 
 	return &c, nil
+}
+
+func sqliteContactSnapshot(contact *models.Contact) (json.RawMessage, error) {
+	normalized := *contact
+	normalized.CreatedAt = contact.CreatedAt.UTC()
+	normalized.UpdatedAt = contact.UpdatedAt.UTC()
+	return history.SnapshotContact(&normalized)
 }
 
 // scanContactRows scans multiple contact rows and closes the result set.

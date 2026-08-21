@@ -3,25 +3,37 @@
 package storage
 
 import (
+	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/models"
 )
 
 // CreateRelationship inserts a new relationship.
 func (s *SqliteStore) CreateRelationship(rel *models.Relationship) error {
-	_, err := s.db.Exec(`
-		INSERT INTO relationships (id, source_id, target_id, type, context, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		rel.ID.String(), rel.SourceID.String(), rel.TargetID.String(),
-		rel.Type, rel.Context, rel.CreatedAt.UTC(),
+	after, err := sqliteRelationshipSnapshot(rel)
+	if err != nil {
+		return fmt.Errorf("snapshot relationship: %w", err)
+	}
+	event, err := history.NewEvent(
+		history.EntityRelationship,
+		rel.ID,
+		[]uuid.UUID{rel.ID, rel.SourceID, rel.TargetID},
+		history.ActionCreate,
+		s.source,
+		nil,
+		after,
+		s.now(),
 	)
 	if err != nil {
-		return fmt.Errorf("insert relationship: %w", err)
+		return fmt.Errorf("create relationship history event: %w", err)
 	}
-	return nil
+	return s.commitHistoryEvent(event)
 }
 
 // ListRelationships returns all relationships where the given entityID appears
@@ -79,17 +91,74 @@ func (s *SqliteStore) ListRelationships(entityID uuid.UUID) ([]*models.Relations
 // DeleteRelationship removes a relationship by UUID, returning
 // ErrRelationshipNotFound if no row matches.
 func (s *SqliteStore) DeleteRelationship(id uuid.UUID) error {
-	res, err := s.db.Exec("DELETE FROM relationships WHERE id = ?", id.String())
+	relationship, err := s.getRelationship(id)
 	if err != nil {
-		return fmt.Errorf("delete relationship: %w", err)
+		return err
+	}
+	before, err := sqliteRelationshipSnapshot(relationship)
+	if err != nil {
+		return fmt.Errorf("snapshot relationship: %w", err)
+	}
+	event, err := history.NewEvent(
+		history.EntityRelationship,
+		id,
+		[]uuid.UUID{id, relationship.SourceID, relationship.TargetID},
+		history.ActionDelete,
+		s.source,
+		before,
+		nil,
+		s.now(),
+	)
+	if err != nil {
+		return fmt.Errorf("create relationship history event: %w", err)
+	}
+	return s.commitHistoryEvent(event)
+}
+
+func (s *SqliteStore) getRelationship(id uuid.UUID) (*models.Relationship, error) {
+	return scanRelationship(s.db.QueryRow(`
+		SELECT id, source_id, target_id, type, context, created_at
+		FROM relationships WHERE id = ?`, id.String()))
+}
+
+func scanRelationship(row rowScanner) (*models.Relationship, error) {
+	var relationship models.Relationship
+	var id, sourceID, targetID string
+	var createdAt time.Time
+	if err := row.Scan(
+		&id,
+		&sourceID,
+		&targetID,
+		&relationship.Type,
+		&relationship.Context,
+		&createdAt,
+	); errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrRelationshipNotFound
+	} else if err != nil {
+		return nil, fmt.Errorf("scan relationship: %w", err)
 	}
 
-	n, err := res.RowsAffected()
+	parsedID, err := uuid.Parse(id)
 	if err != nil {
-		return fmt.Errorf("rows affected: %w", err)
+		return nil, fmt.Errorf("parse relationship id: %w", err)
 	}
-	if n == 0 {
-		return ErrRelationshipNotFound
+	parsedSourceID, err := uuid.Parse(sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("parse source_id: %w", err)
 	}
-	return nil
+	parsedTargetID, err := uuid.Parse(targetID)
+	if err != nil {
+		return nil, fmt.Errorf("parse target_id: %w", err)
+	}
+	relationship.ID = parsedID
+	relationship.SourceID = parsedSourceID
+	relationship.TargetID = parsedTargetID
+	relationship.CreatedAt = createdAt
+	return &relationship, nil
+}
+
+func sqliteRelationshipSnapshot(relationship *models.Relationship) (json.RawMessage, error) {
+	normalized := *relationship
+	normalized.CreatedAt = relationship.CreatedAt.UTC()
+	return history.SnapshotRelationship(&normalized)
 }
