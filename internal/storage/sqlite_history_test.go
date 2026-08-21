@@ -215,6 +215,23 @@ func runHistoryUppercaseIDContract(t *testing.T, backend historyReadBackend) {
 		}
 	})
 
+	t.Run("uppercase prefixes", func(t *testing.T) {
+		got, err := backend.list(strings.ToUpper(testHistoryEntityA.String()[:6]), 0)
+		if err != nil {
+			t.Fatalf("ListHistory: %v", err)
+		}
+		if len(got) != 3 {
+			t.Fatalf("ListHistory() len = %d, want 3", len(got))
+		}
+		event, err := backend.get(strings.ToUpper(testHistoryEventA.String()[:6]))
+		if err != nil {
+			t.Fatalf("GetHistoryEvent: %v", err)
+		}
+		if event.ID != testHistoryEventA {
+			t.Fatalf("GetHistoryEvent() ID = %s, want %s", event.ID, testHistoryEventA)
+		}
+	})
+
 	t.Run("too short prefixes", func(t *testing.T) {
 		if _, err := backend.list("10000", 0); !errors.Is(err, ErrPrefixTooShort) {
 			t.Fatalf("ListHistory() error = %v, want ErrPrefixTooShort", err)
@@ -232,8 +249,14 @@ func runHistoryReadErrorContract(t *testing.T, backend historyReadBackend) {
 		if _, err := backend.list("abcdef", 0); !errors.Is(err, ErrAmbiguousPrefix) {
 			t.Fatalf("ListHistory() error = %v, want ErrAmbiguousPrefix", err)
 		}
+		if _, err := backend.list("ABCDEF", 0); !errors.Is(err, ErrAmbiguousPrefix) {
+			t.Fatalf("ListHistory() uppercase error = %v, want ErrAmbiguousPrefix", err)
+		}
 		if _, err := backend.get("fedcba"); !errors.Is(err, ErrAmbiguousPrefix) {
 			t.Fatalf("GetHistoryEvent() error = %v, want ErrAmbiguousPrefix", err)
+		}
+		if _, err := backend.get("FEDCBA"); !errors.Is(err, ErrAmbiguousPrefix) {
+			t.Fatalf("GetHistoryEvent() uppercase error = %v, want ErrAmbiguousPrefix", err)
 		}
 	})
 

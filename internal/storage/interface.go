@@ -5,6 +5,7 @@ package storage
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/harperreed/crm/internal/history"
@@ -27,6 +28,24 @@ func validateHistorySource(source history.Source) error {
 		return fmt.Errorf("invalid history source %q", source)
 	}
 	return nil
+}
+
+func normalizeHistoryIDPrefix(value string) string {
+	if len(value) == 0 || len(value) > 36 {
+		return value
+	}
+	for index, char := range []byte(value) {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			if char != '-' {
+				return value
+			}
+			continue
+		}
+		if !strings.ContainsRune("0123456789abcdefABCDEF", rune(char)) {
+			return value
+		}
+	}
+	return strings.ToLower(value)
 }
 
 // Storage defines the contract that all CRM data backends must satisfy.

@@ -3,11 +3,14 @@
 package storage
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/harperreed/crm/internal/history"
 )
 
 func TestMarkdownHistorySchema(t *testing.T) {
@@ -117,5 +120,147 @@ func TestMarkdownGetHistoryEventRejectsSymlink(t *testing.T) {
 	_, err := store.GetHistoryEvent(event.ID.String())
 	if !errors.Is(err, ErrHistoryCorrupt) {
 		t.Fatalf("GetHistoryEvent() error = %v, want ErrHistoryCorrupt", err)
+	}
+}
+
+func TestMarkdownWriteCommittedHistoryEventIsIdempotent(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	event := testContactHistoryEvent(t, testHistoryEntityA, testHistoryEventA, testHistoryTime)
+	if err := store.writeCommittedHistoryEvent(event); err != nil {
+		t.Fatalf("first writeCommittedHistoryEvent: %v", err)
+	}
+	if err := store.writeCommittedHistoryEvent(event); err != nil {
+		t.Fatalf("second writeCommittedHistoryEvent: %v", err)
+	}
+	assertNoMarkdownHistoryTempFiles(t, store)
+}
+
+func TestMarkdownWriteCommittedHistoryEventPreservesConflictingEvent(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	event := testContactHistoryEvent(t, testHistoryEntityA, testHistoryEventA, testHistoryTime)
+	if err := store.writeCommittedHistoryEvent(event); err != nil {
+		t.Fatalf("writeCommittedHistoryEvent: %v", err)
+	}
+	path := filepath.Join(store.historyEventsDir(), event.ID.String()+".json")
+	want, err := os.ReadFile(path) //nolint:gosec // path is built from the temporary test store.
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	conflicting := *event
+	conflicting.Source = history.SourceMCP
+
+	err = store.writeCommittedHistoryEvent(&conflicting)
+	if !errors.Is(err, ErrHistoryConflict) {
+		t.Fatalf("writeCommittedHistoryEvent() error = %v, want ErrHistoryConflict", err)
+	}
+	got, err := os.ReadFile(path) //nolint:gosec // path is built from the temporary test store.
+	if err != nil {
+		t.Fatalf("ReadFile after conflict: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatal("conflicting write changed committed event")
+	}
+	assertNoMarkdownHistoryTempFiles(t, store)
+}
+
+func TestMarkdownWriteCommittedHistoryEventPreservesCorruptEvent(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	event := testContactHistoryEvent(t, testHistoryEntityA, testHistoryEventA, testHistoryTime)
+	path := filepath.Join(store.historyEventsDir(), event.ID.String()+".json")
+	want := []byte("truncated event")
+	if err := os.WriteFile(path, want, 0o600); err != nil { //nolint:gosec // path is built from the temporary test store.
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	err := store.writeCommittedHistoryEvent(event)
+	if !errors.Is(err, ErrHistoryCorrupt) {
+		t.Fatalf("writeCommittedHistoryEvent() error = %v, want ErrHistoryCorrupt", err)
+	}
+	got, err := os.ReadFile(path) //nolint:gosec // path is built from the temporary test store.
+	if err != nil {
+		t.Fatalf("ReadFile after corrupt conflict: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatal("write changed corrupt committed event")
+	}
+	assertNoMarkdownHistoryTempFiles(t, store)
+}
+
+func TestMarkdownWriteCommittedHistoryEventRejectsFinalSymlink(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	event := testContactHistoryEvent(t, testHistoryEntityA, testHistoryEventA, testHistoryTime)
+	path := filepath.Join(store.historyEventsDir(), event.ID.String()+".json")
+	target := filepath.Join(t.TempDir(), "outside.json")
+	want := []byte("outside target")
+	if err := os.WriteFile(target, want, 0o600); err != nil {
+		t.Fatalf("WriteFile target: %v", err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	if err := store.writeCommittedHistoryEvent(event); err == nil {
+		t.Fatal("writeCommittedHistoryEvent() error = nil")
+	}
+	got, err := os.ReadFile(target) //nolint:gosec // target is built from a temporary test directory.
+	if err != nil {
+		t.Fatalf("ReadFile target: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatal("committed write changed symlink target")
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatalf("Lstat symlink: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("committed write replaced final symlink")
+	}
+	assertNoMarkdownHistoryTempFiles(t, store)
+}
+
+func TestMarkdownWriteCommittedHistoryEventUsesPrivateMode(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	event := testContactHistoryEvent(t, testHistoryEntityA, testHistoryEventA, testHistoryTime)
+	if err := store.writeCommittedHistoryEvent(event); err != nil {
+		t.Fatalf("writeCommittedHistoryEvent: %v", err)
+	}
+	path := filepath.Join(store.historyEventsDir(), event.ID.String()+".json")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("committed mode = %04o, want 0600", got)
+	}
+	assertNoMarkdownHistoryTempFiles(t, store)
+}
+
+func TestMarkdownHistoryReadsIgnoreTemporaryFiles(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	path := filepath.Join(store.historyEventsDir(), ".interrupted-event.tmp")
+	if err := os.WriteFile(path, []byte(`{"partial":`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got, err := store.ListHistory(testHistoryEntityA.String(), 0)
+	if err != nil {
+		t.Fatalf("ListHistory: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("ListHistory() len = %d, want 0", len(got))
+	}
+}
+
+func assertNoMarkdownHistoryTempFiles(t *testing.T, store *MarkdownStore) {
+	t.Helper()
+	entries, err := os.ReadDir(store.historyEventsDir())
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	for _, entry := range entries {
+		if filepath.Ext(entry.Name()) == ".tmp" {
+			t.Fatalf("temporary history file remains: %s", entry.Name())
+		}
 	}
 }

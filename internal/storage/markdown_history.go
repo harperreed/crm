@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/google/uuid"
 	"github.com/harperreed/crm/internal/history"
@@ -82,20 +83,115 @@ func ensureJSONDocumentEnd(decoder *json.Decoder) error {
 	return nil
 }
 
-func (s *MarkdownStore) writeCommittedHistoryEvent(event *history.Event) error {
+func (s *MarkdownStore) writeCommittedHistoryEvent(event *history.Event) (returnErr error) {
+	data, err := marshalCommittedHistoryEvent(event)
+	if err != nil {
+		return err
+	}
+
+	temporary, err := os.CreateTemp(s.historyEventsDir(), "."+event.ID.String()+"-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temporary history event: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	temporaryOpen := true
+	defer func() {
+		if temporaryOpen {
+			if err := temporary.Close(); err != nil {
+				returnErr = errors.Join(returnErr, fmt.Errorf("close temporary history event during cleanup: %w", err))
+			}
+		}
+		if err := os.Remove(temporaryPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			returnErr = errors.Join(returnErr, fmt.Errorf("remove temporary history event: %w", err))
+		}
+	}()
+
+	if err := temporary.Chmod(0o600); err != nil {
+		return fmt.Errorf("set temporary history event mode: %w", err)
+	}
+	written, err := temporary.Write(data)
+	if err != nil {
+		return fmt.Errorf("write temporary history event: %w", err)
+	}
+	if written != len(data) {
+		return fmt.Errorf("write temporary history event: %w", io.ErrShortWrite)
+	}
+	if err := temporary.Sync(); err != nil {
+		return fmt.Errorf("sync temporary history event: %w", err)
+	}
+	closeErr := temporary.Close()
+	temporaryOpen = false
+	if closeErr != nil {
+		return fmt.Errorf("close temporary history event: %w", closeErr)
+	}
+
+	path := filepath.Join(s.historyEventsDir(), event.ID.String()+".json")
+	if err := os.Link(temporaryPath, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return compareCommittedHistoryEvent(path, event, data)
+		}
+		return fmt.Errorf("publish committed history event %q: %w", path, err)
+	}
+	return nil
+}
+
+func marshalCommittedHistoryEvent(event *history.Event) ([]byte, error) {
 	if err := event.Validate(); err != nil {
-		return fmt.Errorf("validate history event: %w", err)
+		return nil, fmt.Errorf("validate history event: %w", err)
 	}
 	data, err := json.MarshalIndent(event, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode history event: %w", err)
+		return nil, fmt.Errorf("encode history event: %w", err)
 	}
 	data = append(data, '\n')
-	path := filepath.Join(s.historyEventsDir(), event.ID.String()+".json")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return fmt.Errorf("write committed history event %q: %w", path, err)
+	return data, nil
+}
+
+func compareCommittedHistoryEvent(path string, expected *history.Event, expectedData []byte) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("inspect existing committed history event %q: %w", path, err)
 	}
-	return nil
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: committed history path %q is a symbolic link", ErrHistoryConflict, path)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%w: committed history path %q is not a regular file", ErrHistoryConflict, path)
+	}
+
+	existingData, err := readFileWithoutFollowingSymlinks(path)
+	if err != nil {
+		return fmt.Errorf("read existing committed history event %q: %w", path, err)
+	}
+	existing, err := decodeCommittedHistoryEvent(existingData)
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrHistoryCorrupt, path, err)
+	}
+	if filepath.Base(path) != existing.ID.String()+".json" {
+		return fmt.Errorf("%w: %s: filename does not match event ID %s", ErrHistoryCorrupt, path, existing.ID)
+	}
+	canonicalExisting, err := marshalCommittedHistoryEvent(existing)
+	if err != nil {
+		return fmt.Errorf("%w: canonicalize %s: %w", ErrHistoryCorrupt, path, err)
+	}
+	if bytes.Equal(canonicalExisting, expectedData) && existing.ID == expected.ID {
+		return nil
+	}
+	return fmt.Errorf("%w: event ID %s already has different committed content", ErrHistoryConflict, expected.ID)
+}
+
+func readFileWithoutFollowingSymlinks(path string) ([]byte, error) {
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, err
+	}
+	file := os.NewFile(uintptr(fd), path)
+	if file == nil {
+		_ = syscall.Close(fd)
+		return nil, errors.New("open committed history event")
+	}
+	defer func() { _ = file.Close() }()
+	return io.ReadAll(file)
 }
 
 func (s *MarkdownStore) ListHistory(entityIDOrPrefix string, limit int) ([]*history.Summary, error) {
@@ -143,6 +239,7 @@ func resolveMarkdownHistoryEntityID(events []*history.Event, value string) (uuid
 	if id, err := uuid.Parse(value); err == nil {
 		return id, nil
 	}
+	value = normalizeHistoryIDPrefix(value)
 	matches := make(map[uuid.UUID]struct{})
 	for _, event := range events {
 		for _, id := range event.RelatedEntityIDs {
@@ -180,6 +277,7 @@ func (s *MarkdownStore) GetHistoryEvent(eventIDOrPrefix string) (*history.Event,
 		}
 		return nil, ErrHistoryNotFound
 	}
+	eventIDOrPrefix = normalizeHistoryIDPrefix(eventIDOrPrefix)
 	for _, event := range events {
 		if strings.HasPrefix(event.ID.String(), eventIDOrPrefix) {
 			matches = append(matches, event)

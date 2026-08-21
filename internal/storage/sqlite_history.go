@@ -133,6 +133,7 @@ func (s *SqliteStore) resolveHistoryEntityID(prefix string) (uuid.UUID, error) {
 	if len(prefix) < 6 {
 		return uuid.Nil, ErrPrefixTooShort
 	}
+	prefix = normalizeHistoryIDPrefix(prefix)
 	rows, err := s.db.Query(`
 		SELECT DISTINCT entity_id
 		FROM history_event_entities
@@ -152,6 +153,8 @@ func (s *SqliteStore) resolveHistoryEventID(prefix string) (uuid.UUID, error) {
 	}
 	if id, err := uuid.Parse(prefix); err == nil {
 		prefix = id.String()
+	} else {
+		prefix = normalizeHistoryIDPrefix(prefix)
 	}
 	rows, err := s.db.Query(`
 		SELECT id
