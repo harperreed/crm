@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -319,7 +320,7 @@ func TestMarkdownHistoryMutationContactLifecycle(t *testing.T) {
 	updated.Name = "Ada King"
 	updated.Email = "ada@king.example"
 	updated.CreatedAt = clock.Add(24 * time.Hour)
-	updated.UpdatedAt = time.Time{}
+	updated.UpdatedAt = clock.Add(30 * time.Second)
 	wantUpdatedInput := cloneContactForTest(updated)
 	clock = clock.Add(time.Minute)
 	if err := store.UpdateContact(updated); err != nil {
@@ -398,6 +399,35 @@ func TestMarkdownHistoryMutationCompanyAndRelationship(t *testing.T) {
 	}
 }
 
+func TestMarkdownHistoryMutationCompanyLifecycle(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+	company := &models.Company{ID: uuid.New(), Name: "Before Inc", Domain: "before.example", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour)}
+	if err := store.CreateCompany(company); err != nil {
+		t.Fatalf("CreateCompany: %v", err)
+	}
+	before := mustGetCompany(t, store, company.ID)
+	updated := cloneCompanyForTest(before)
+	updated.Name = "After Inc"
+	updated.Domain = "after.example"
+	updated.CreatedAt = now.Add(time.Hour)
+	updated.UpdatedAt = now.Add(time.Minute)
+	now = now.Add(time.Minute)
+	if err := store.UpdateCompany(updated); err != nil {
+		t.Fatalf("UpdateCompany: %v", err)
+	}
+	after := mustGetCompany(t, store, company.ID)
+	updateEvent := mustHistoryEventWithAction(t, store, company.ID, history.ActionUpdate)
+	assertMarkdownHistoryEvent(t, updateEvent, history.EntityCompany, history.ActionUpdate, mustMarkdownCompanySnapshot(t, before), mustMarkdownCompanySnapshot(t, after), []uuid.UUID{company.ID})
+	now = now.Add(time.Minute)
+	if err := store.DeleteCompany(company.ID); err != nil {
+		t.Fatalf("DeleteCompany: %v", err)
+	}
+	deleteEvent := mustHistoryEventWithAction(t, store, company.ID, history.ActionDelete)
+	assertMarkdownHistoryEvent(t, deleteEvent, history.EntityCompany, history.ActionDelete, mustMarkdownCompanySnapshot(t, after), nil, []uuid.UUID{company.ID})
+}
+
 func TestMarkdownHistoryNoOpContactAndCompany(t *testing.T) {
 	store := newTestMarkdownStore(t)
 	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
@@ -438,6 +468,215 @@ func TestMarkdownHistoryNoOpContactAndCompany(t *testing.T) {
 	if events := mustHistoryEvents(t, store, company.ID); len(events) != 1 {
 		t.Fatalf("company history len = %d, want 1", len(events))
 	}
+}
+
+func TestMarkdownHistoryUpdateTimestampParity(t *testing.T) { //nolint:gocognit,funlen // Contact and company parity share one regression contract.
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	t.Run("contact", func(t *testing.T) {
+		store := newTestMarkdownStore(t)
+		store.now = func() time.Time { return now.Add(2 * time.Hour) }
+		contact := &models.Contact{ID: uuid.New(), Name: "Contact", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+		if err := store.CreateContact(contact); err != nil {
+			t.Fatalf("CreateContact: %v", err)
+		}
+		before := mustGetContact(t, store, contact.ID)
+
+		zero := cloneContactForTest(before)
+		zero.Name = "Zero timestamp"
+		zero.UpdatedAt = time.Time{}
+		zeroInput := cloneContactForTest(zero)
+		if err := store.UpdateContact(zero); err == nil {
+			t.Fatal("UpdateContact zero timestamp error = nil")
+		}
+		if !reflect.DeepEqual(zero, zeroInput) {
+			t.Fatal("UpdateContact mutated zero-timestamp input")
+		}
+		if got := mustGetContact(t, store, contact.ID); !reflect.DeepEqual(got, before) {
+			t.Fatalf("zero-timestamp update changed state: got %#v want %#v", got, before)
+		}
+		if got := mustHistoryEvents(t, store, contact.ID); len(got) != 1 {
+			t.Fatalf("zero-timestamp history len = %d, want 1", len(got))
+		}
+
+		older := cloneContactForTest(before)
+		older.Name = "Older timestamp"
+		older.UpdatedAt = now.Add(-time.Hour)
+		olderInput := cloneContactForTest(older)
+		if err := store.UpdateContact(older); err != nil {
+			t.Fatalf("UpdateContact older timestamp: %v", err)
+		}
+		if !reflect.DeepEqual(older, olderInput) {
+			t.Fatal("UpdateContact mutated older-timestamp input")
+		}
+		after := mustGetContact(t, store, contact.ID)
+		if !after.UpdatedAt.Equal(older.UpdatedAt) {
+			t.Fatalf("UpdatedAt = %v, want %v", after.UpdatedAt, older.UpdatedAt)
+		}
+		event := mustHistoryEventWithAction(t, store, contact.ID, history.ActionUpdate)
+		assertMarkdownHistoryEvent(t, event, history.EntityContact, history.ActionUpdate, mustMarkdownContactSnapshot(t, before), mustMarkdownContactSnapshot(t, after), []uuid.UUID{contact.ID})
+	})
+
+	t.Run("company", func(t *testing.T) {
+		store := newTestMarkdownStore(t)
+		store.now = func() time.Time { return now.Add(2 * time.Hour) }
+		company := &models.Company{ID: uuid.New(), Name: "Company", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+		if err := store.CreateCompany(company); err != nil {
+			t.Fatalf("CreateCompany: %v", err)
+		}
+		before := mustGetCompany(t, store, company.ID)
+		zero := cloneCompanyForTest(before)
+		zero.Name = "Zero timestamp"
+		zero.UpdatedAt = time.Time{}
+		zeroInput := cloneCompanyForTest(zero)
+		if err := store.UpdateCompany(zero); err == nil {
+			t.Fatal("UpdateCompany zero timestamp error = nil")
+		}
+		if !reflect.DeepEqual(zero, zeroInput) {
+			t.Fatal("UpdateCompany mutated zero-timestamp input")
+		}
+		if got := mustGetCompany(t, store, company.ID); !reflect.DeepEqual(got, before) {
+			t.Fatalf("zero-timestamp update changed state: got %#v want %#v", got, before)
+		}
+		if got := mustHistoryEvents(t, store, company.ID); len(got) != 1 {
+			t.Fatalf("zero-timestamp history len = %d, want 1", len(got))
+		}
+
+		older := cloneCompanyForTest(before)
+		older.Name = "Older timestamp"
+		older.UpdatedAt = now.Add(-time.Hour)
+		olderInput := cloneCompanyForTest(older)
+		if err := store.UpdateCompany(older); err != nil {
+			t.Fatalf("UpdateCompany older timestamp: %v", err)
+		}
+		if !reflect.DeepEqual(older, olderInput) {
+			t.Fatal("UpdateCompany mutated older-timestamp input")
+		}
+		after := mustGetCompany(t, store, company.ID)
+		if !after.UpdatedAt.Equal(older.UpdatedAt) {
+			t.Fatalf("UpdatedAt = %v, want %v", after.UpdatedAt, older.UpdatedAt)
+		}
+		event := mustHistoryEventWithAction(t, store, company.ID, history.ActionUpdate)
+		assertMarkdownHistoryEvent(t, event, history.EntityCompany, history.ActionUpdate, mustMarkdownCompanySnapshot(t, before), mustMarkdownCompanySnapshot(t, after), []uuid.UUID{company.ID})
+	})
+}
+
+func TestMarkdownHistoryNilCollectionsAreCanonical(t *testing.T) { //nolint:gocognit,funlen // Both entity lifecycles must cover create, update, and restart.
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	t.Run("contact create and update", func(t *testing.T) {
+		dataDir := t.TempDir()
+		store, err := NewMarkdownStore(dataDir, history.SourceCLI)
+		if err != nil {
+			t.Fatalf("NewMarkdownStore: %v", err)
+		}
+		contact := &models.Contact{ID: uuid.New(), Name: "Nil Contact", CreatedAt: now, UpdatedAt: now}
+		input := cloneContactPreservingNilForTest(contact)
+		if err := store.CreateContact(contact); err != nil {
+			t.Fatalf("CreateContact: %v", err)
+		}
+		if !reflect.DeepEqual(contact, input) {
+			t.Fatal("CreateContact mutated nil collections")
+		}
+		fetched := mustGetContact(t, store, contact.ID)
+		if fetched.Fields == nil || fetched.Tags == nil {
+			t.Fatalf("fetched collections = %#v/%#v, want nonnil empty", fetched.Fields, fetched.Tags)
+		}
+		createEvent := mustOnlyHistoryEvent(t, store, contact.ID)
+		assertSnapshotExactlyMatchesContact(t, createEvent.After, fetched)
+		copyCommittedEventToPending(t, store, createEvent)
+		store, err = NewMarkdownStore(dataDir, history.SourceCLI)
+		if err != nil {
+			t.Fatalf("restart after nil create: %v", err)
+		}
+
+		populated := mustGetContact(t, store, contact.ID)
+		populated.Fields = map[string]any{"old": "value"}
+		populated.Tags = []string{"old"}
+		populated.UpdatedAt = now.Add(time.Minute)
+		if err := store.UpdateContact(populated); err != nil {
+			t.Fatalf("UpdateContact populated: %v", err)
+		}
+		update := mustGetContact(t, store, contact.ID)
+		update.Name = "Nil Contact Updated"
+		update.Fields = nil
+		update.Tags = nil
+		update.UpdatedAt = now.Add(2 * time.Minute)
+		updateInput := cloneContactPreservingNilForTest(update)
+		if err := store.UpdateContact(update); err != nil {
+			t.Fatalf("UpdateContact nil: %v", err)
+		}
+		if !reflect.DeepEqual(update, updateInput) {
+			t.Fatal("UpdateContact mutated nil collections")
+		}
+		fetched = mustGetContact(t, store, contact.ID)
+		if fetched.Fields == nil || fetched.Tags == nil {
+			t.Fatalf("updated collections = %#v/%#v, want nonnil empty", fetched.Fields, fetched.Tags)
+		}
+		events := mustHistoryEvents(t, store, contact.ID)
+		updateEvent := events[0]
+		assertSnapshotExactlyMatchesContact(t, updateEvent.After, fetched)
+		copyCommittedEventToPending(t, store, updateEvent)
+		if _, err := NewMarkdownStore(dataDir, history.SourceCLI); err != nil {
+			t.Fatalf("restart after nil update: %v", err)
+		}
+	})
+
+	t.Run("company create and update", func(t *testing.T) {
+		dataDir := t.TempDir()
+		store, err := NewMarkdownStore(dataDir, history.SourceCLI)
+		if err != nil {
+			t.Fatalf("NewMarkdownStore: %v", err)
+		}
+		company := &models.Company{ID: uuid.New(), Name: "Nil Company", CreatedAt: now, UpdatedAt: now}
+		input := cloneCompanyPreservingNilForTest(company)
+		if err := store.CreateCompany(company); err != nil {
+			t.Fatalf("CreateCompany: %v", err)
+		}
+		if !reflect.DeepEqual(company, input) {
+			t.Fatal("CreateCompany mutated nil collections")
+		}
+		fetched := mustGetCompany(t, store, company.ID)
+		if fetched.Fields == nil || fetched.Tags == nil {
+			t.Fatalf("fetched collections = %#v/%#v, want nonnil empty", fetched.Fields, fetched.Tags)
+		}
+		createEvent := mustOnlyHistoryEvent(t, store, company.ID)
+		assertSnapshotExactlyMatchesCompany(t, createEvent.After, fetched)
+		copyCommittedEventToPending(t, store, createEvent)
+		store, err = NewMarkdownStore(dataDir, history.SourceCLI)
+		if err != nil {
+			t.Fatalf("restart after nil create: %v", err)
+		}
+
+		populated := mustGetCompany(t, store, company.ID)
+		populated.Fields = map[string]any{"old": "value"}
+		populated.Tags = []string{"old"}
+		populated.UpdatedAt = now.Add(time.Minute)
+		if err := store.UpdateCompany(populated); err != nil {
+			t.Fatalf("UpdateCompany populated: %v", err)
+		}
+		update := mustGetCompany(t, store, company.ID)
+		update.Name = "Nil Company Updated"
+		update.Fields = nil
+		update.Tags = nil
+		update.UpdatedAt = now.Add(2 * time.Minute)
+		updateInput := cloneCompanyPreservingNilForTest(update)
+		if err := store.UpdateCompany(update); err != nil {
+			t.Fatalf("UpdateCompany nil: %v", err)
+		}
+		if !reflect.DeepEqual(update, updateInput) {
+			t.Fatal("UpdateCompany mutated nil collections")
+		}
+		fetched = mustGetCompany(t, store, company.ID)
+		if fetched.Fields == nil || fetched.Tags == nil {
+			t.Fatalf("updated collections = %#v/%#v, want nonnil empty", fetched.Fields, fetched.Tags)
+		}
+		events := mustHistoryEvents(t, store, company.ID)
+		updateEvent := events[0]
+		assertSnapshotExactlyMatchesCompany(t, updateEvent.After, fetched)
+		copyCommittedEventToPending(t, store, updateEvent)
+		if _, err := NewMarkdownStore(dataDir, history.SourceCLI); err != nil {
+			t.Fatalf("restart after nil update: %v", err)
+		}
+	})
 }
 
 func TestMarkdownRecoveryAppliesPendingUpdate(t *testing.T) {
@@ -634,6 +873,103 @@ func TestMarkdownPendingRejectsMismatchedFilenameAndSymlink(t *testing.T) {
 	})
 }
 
+func TestMarkdownRecoveryRejectsInexactCurrentFrontmatterDelimiters(t *testing.T) { //nolint:funlen // The table enumerates each malformed frontmatter form.
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name       string
+		entityType history.EntityType
+		content    func(uuid.UUID) string
+	}{
+		{
+			name:       "contact opening delimiter has comment",
+			entityType: history.EntityContact,
+			content: func(id uuid.UUID) string {
+				return fmt.Sprintf("--- # not exact\nid: %s\nname: Contact\ncreated_at: %s\nupdated_at: %s\n---\n", id, now.Format(time.RFC3339), now.Format(time.RFC3339))
+			},
+		},
+		{
+			name:       "company closing delimiter has suffix",
+			entityType: history.EntityCompany,
+			content: func(id uuid.UUID) string {
+				return fmt.Sprintf("---\nid: %s\nname: Company\ncreated_at: %s\nupdated_at: %s\n---junk\n", id, now.Format(time.RFC3339), now.Format(time.RFC3339))
+			},
+		},
+		{
+			name:       "contact missing closing delimiter",
+			entityType: history.EntityContact,
+			content: func(id uuid.UUID) string {
+				return fmt.Sprintf("---\nid: %s\nname: Contact\ncreated_at: %s\nupdated_at: %s\n", id, now.Format(time.RFC3339), now.Format(time.RFC3339))
+			},
+		},
+		{
+			name:       "company empty frontmatter",
+			entityType: history.EntityCompany,
+			content: func(uuid.UUID) string {
+				return "---\n---\n"
+			},
+		},
+		{
+			name:       "contact duplicate required key",
+			entityType: history.EntityContact,
+			content: func(id uuid.UUID) string {
+				return fmt.Sprintf("---\nid: %s\nid: %s\nname: Contact\ncreated_at: %s\nupdated_at: %s\n---\n", id, id, now.Format(time.RFC3339), now.Format(time.RFC3339))
+			},
+		},
+		{
+			name:       "company unknown field",
+			entityType: history.EntityCompany,
+			content: func(id uuid.UUID) string {
+				return fmt.Sprintf("---\nid: %s\nname: Company\nunknown: value\ncreated_at: %s\nupdated_at: %s\n---\n", id, now.Format(time.RFC3339), now.Format(time.RFC3339))
+			},
+		},
+		{
+			name:       "contact missing frontmatter",
+			entityType: history.EntityContact,
+			content: func(uuid.UUID) string {
+				return "plain markdown\n"
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			store, err := NewMarkdownStore(dataDir, history.SourceCLI)
+			if err != nil {
+				t.Fatalf("NewMarkdownStore: %v", err)
+			}
+			id := uuid.New()
+			var before json.RawMessage
+			var currentPath string
+			switch test.entityType {
+			case history.EntityContact:
+				before = mustMarkdownContactSnapshot(t, &models.Contact{ID: id, Name: "Contact", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now})
+				currentPath = filepath.Join(store.contactsDir(), "malformed.md")
+			case history.EntityCompany:
+				before = mustMarkdownCompanySnapshot(t, &models.Company{ID: id, Name: "Company", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now})
+				currentPath = filepath.Join(store.companiesDir(), "malformed.md")
+			default:
+				t.Fatalf("unsupported entity type %s", test.entityType)
+			}
+			if err := os.WriteFile(currentPath, []byte(test.content(id)), 0o600); err != nil {
+				t.Fatalf("WriteFile current: %v", err)
+			}
+			event := mustHistoryEventForTest(t, test.entityType, id, []uuid.UUID{id}, history.ActionDelete, before, nil, now.Add(time.Minute))
+			writePendingHistoryForTest(t, store, event)
+			pendingPath := filepath.Join(store.historyPendingDir(), event.ID.String()+".json")
+			_, err = NewMarkdownStore(dataDir, history.SourceCLI)
+			if !errors.Is(err, ErrHistoryCorrupt) {
+				t.Fatalf("NewMarkdownStore error = %v, want ErrHistoryCorrupt", err)
+			}
+			if !strings.Contains(err.Error(), currentPath) {
+				t.Fatalf("error = %q, want current path %q", err, currentPath)
+			}
+			if _, err := os.Stat(pendingPath); err != nil {
+				t.Fatalf("pending event not preserved: %v", err)
+			}
+		})
+	}
+}
+
 func TestMarkdownRecoveryHandlesCommittedAndPendingCopies(t *testing.T) {
 	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
 	contact := &models.Contact{ID: uuid.New(), Name: "Applied", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
@@ -748,6 +1084,169 @@ func TestMarkdownRecoveryAcceptsRenamedContactAfterStateAtOldFilename(t *testing
 	}
 }
 
+func TestMarkdownRecoveryRejectsDuplicateCurrentEntityIDs(t *testing.T) {
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	for _, entityType := range []history.EntityType{history.EntityContact, history.EntityCompany} {
+		t.Run(string(entityType), func(t *testing.T) {
+			dataDir := t.TempDir()
+			store, err := NewMarkdownStore(dataDir, history.SourceCLI)
+			if err != nil {
+				t.Fatalf("NewMarkdownStore: %v", err)
+			}
+			id := uuid.New()
+			var before json.RawMessage
+			switch entityType {
+			case history.EntityContact:
+				value := &models.Contact{ID: id, Name: "Duplicate", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+				before = mustMarkdownContactSnapshot(t, value)
+				if err := store.writeContact(value, "one.md"); err != nil {
+					t.Fatal(err)
+				}
+				if err := store.writeContact(value, "two.md"); err != nil {
+					t.Fatal(err)
+				}
+			case history.EntityCompany:
+				value := &models.Company{ID: id, Name: "Duplicate", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+				before = mustMarkdownCompanySnapshot(t, value)
+				if err := store.writeCompany(value, "one.md"); err != nil {
+					t.Fatal(err)
+				}
+				if err := store.writeCompany(value, "two.md"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			event := mustHistoryEventForTest(t, entityType, id, []uuid.UUID{id}, history.ActionDelete, before, nil, now.Add(time.Minute))
+			writePendingHistoryForTest(t, store, event)
+			_, err = NewMarkdownStore(dataDir, history.SourceCLI)
+			if !errors.Is(err, ErrHistoryConflict) {
+				t.Fatalf("NewMarkdownStore error = %v, want ErrHistoryConflict", err)
+			}
+		})
+	}
+}
+
+func TestMarkdownRecoveryRejectsMalformedRelationshipCurrent(t *testing.T) {
+	dataDir := t.TempDir()
+	store, err := NewMarkdownStore(dataDir, history.SourceCLI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	rel := &models.Relationship{ID: uuid.New(), SourceID: uuid.New(), TargetID: uuid.New(), Type: "knows", CreatedAt: now}
+	event := mustHistoryEventForTest(t, history.EntityRelationship, rel.ID, []uuid.UUID{rel.ID, rel.SourceID, rel.TargetID}, history.ActionDelete, mustMarkdownRelationshipSnapshot(t, rel), nil, now.Add(time.Minute))
+	if err := os.WriteFile(store.relationshipsFile(), []byte("- id: not-a-uuid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writePendingHistoryForTest(t, store, event)
+	pending := filepath.Join(store.historyPendingDir(), event.ID.String()+".json")
+	_, err = NewMarkdownStore(dataDir, history.SourceCLI)
+	if !errors.Is(err, ErrHistoryCorrupt) {
+		t.Fatalf("error = %v, want ErrHistoryCorrupt", err)
+	}
+	if _, err := os.Stat(pending); err != nil {
+		t.Fatalf("pending not preserved: %v", err)
+	}
+}
+
+func TestMarkdownPendingRejectsUnexpectedEntriesAndTrailingJSON(t *testing.T) {
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	for _, variant := range []string{"visible-file", "directory", "trailing-json"} {
+		t.Run(variant, func(t *testing.T) {
+			dataDir := t.TempDir()
+			store, err := NewMarkdownStore(dataDir, history.SourceCLI)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch variant {
+			case "visible-file":
+				err = os.WriteFile(filepath.Join(store.historyPendingDir(), "README"), []byte("unexpected"), 0o600)
+			case "directory":
+				err = os.Mkdir(filepath.Join(store.historyPendingDir(), "bad.json"), 0o700)
+			case "trailing-json":
+				contact := &models.Contact{ID: uuid.New(), Name: "Trailing", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+				event := mustHistoryEventForTest(t, history.EntityContact, contact.ID, []uuid.UUID{contact.ID}, history.ActionCreate, nil, mustMarkdownContactSnapshot(t, contact), now)
+				data, marshalErr := marshalCommittedHistoryEvent(event)
+				if marshalErr != nil {
+					t.Fatal(marshalErr)
+				}
+				err = os.WriteFile(filepath.Join(store.historyPendingDir(), event.ID.String()+".json"), append(data, []byte("{}")...), 0o600)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := NewMarkdownStore(dataDir, history.SourceCLI); !errors.Is(err, ErrHistoryCorrupt) {
+				t.Fatalf("error = %v, want ErrHistoryCorrupt", err)
+			}
+		})
+	}
+}
+
+func TestMarkdownRecoveryCommittedCopyErrorsPreservePending(t *testing.T) {
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	contact := &models.Contact{ID: uuid.New(), Name: "Committed", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+	event := mustHistoryEventForTest(t, history.EntityContact, contact.ID, []uuid.UUID{contact.ID}, history.ActionCreate, nil, mustMarkdownContactSnapshot(t, contact), now)
+	for _, variant := range []string{"corrupt", "current-not-after"} {
+		t.Run(variant, func(t *testing.T) {
+			dataDir := t.TempDir()
+			store, err := NewMarkdownStore(dataDir, history.SourceCLI)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writePendingHistoryForTest(t, store, event)
+			finalPath := filepath.Join(store.historyEventsDir(), event.ID.String()+".json")
+			if variant == "corrupt" {
+				err = os.WriteFile(finalPath, []byte("corrupt"), 0o600)
+			} else {
+				err = store.writeCommittedHistoryEvent(event)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = NewMarkdownStore(dataDir, history.SourceCLI)
+			want := ErrHistoryCorrupt
+			if variant == "current-not-after" {
+				want = ErrHistoryConflict
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("error = %v, want %v", err, want)
+			}
+			if _, statErr := os.Stat(filepath.Join(store.historyPendingDir(), event.ID.String()+".json")); statErr != nil {
+				t.Fatalf("pending not preserved: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestMarkdownRecoveryRelationshipDeletePreservesUnrelated(t *testing.T) {
+	dataDir := t.TempDir()
+	store, err := NewMarkdownStore(dataDir, history.SourceCLI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	target := &models.Relationship{ID: uuid.New(), SourceID: uuid.New(), TargetID: uuid.New(), Type: "target", CreatedAt: now}
+	unrelated := &models.Relationship{ID: uuid.New(), SourceID: uuid.New(), TargetID: uuid.New(), Type: "unrelated", CreatedAt: now}
+	if err := store.writeRelationships([]relationshipEntry{relationshipToEntry(target), relationshipToEntry(unrelated)}); err != nil {
+		t.Fatal(err)
+	}
+	event := mustHistoryEventForTest(t, history.EntityRelationship, target.ID, []uuid.UUID{target.ID, target.SourceID, target.TargetID}, history.ActionDelete, mustMarkdownRelationshipSnapshot(t, target), nil, now.Add(time.Minute))
+	writePendingHistoryForTest(t, store, event)
+	recovered, err := NewMarkdownStore(dataDir, history.SourceCLI)
+	if err != nil {
+		t.Fatalf("recovery: %v", err)
+	}
+	_, relationships, err := recovered.readRelationshipsStrict()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(relationships) != 1 || relationships[0].ID != unrelated.ID {
+		t.Fatalf("relationships = %#v, want only %s", relationships, unrelated.ID)
+	}
+	if _, err := recovered.GetHistoryEvent(event.ID.String()); err != nil {
+		t.Fatalf("GetHistoryEvent: %v", err)
+	}
+}
+
 func mustHistoryEvents(t *testing.T, store *MarkdownStore, id uuid.UUID) []*history.Event {
 	t.Helper()
 	summaries, err := store.ListHistory(id.String(), 100)
@@ -772,6 +1271,17 @@ func mustOnlyHistoryEvent(t *testing.T, store *MarkdownStore, id uuid.UUID) *his
 		t.Fatalf("history len = %d, want 1", len(events))
 	}
 	return events[0]
+}
+
+func mustHistoryEventWithAction(t *testing.T, store *MarkdownStore, id uuid.UUID, action history.Action) *history.Event {
+	t.Helper()
+	for _, event := range mustHistoryEvents(t, store, id) {
+		if event.Action == action {
+			return event
+		}
+	}
+	t.Fatalf("history for %s has no %s event", id, action)
+	return nil
 }
 
 func assertMarkdownHistoryEvent(t *testing.T, event *history.Event, entityType history.EntityType, action history.Action, before, after json.RawMessage, related []uuid.UUID) {
@@ -850,6 +1360,64 @@ func cloneContactForTest(contact *models.Contact) *models.Contact {
 	clone.Tags = append([]string{}, contact.Tags...)
 	clone.Fields = cloneMapForTest(contact.Fields)
 	return &clone
+}
+
+func cloneCompanyForTest(company *models.Company) *models.Company {
+	clone := *company
+	clone.Tags = append([]string{}, company.Tags...)
+	clone.Fields = cloneMapForTest(company.Fields)
+	return &clone
+}
+
+func cloneContactPreservingNilForTest(contact *models.Contact) *models.Contact {
+	clone := *contact
+	if contact.Tags != nil {
+		clone.Tags = append([]string{}, contact.Tags...)
+	}
+	if contact.Fields != nil {
+		clone.Fields = cloneMapForTest(contact.Fields)
+	}
+	return &clone
+}
+
+func cloneCompanyPreservingNilForTest(company *models.Company) *models.Company {
+	clone := *company
+	if company.Tags != nil {
+		clone.Tags = append([]string{}, company.Tags...)
+	}
+	if company.Fields != nil {
+		clone.Fields = cloneMapForTest(company.Fields)
+	}
+	return &clone
+}
+
+func assertSnapshotExactlyMatchesContact(t *testing.T, snapshot json.RawMessage, contact *models.Contact) {
+	t.Helper()
+	want := mustMarkdownContactSnapshot(t, contact)
+	equal, err := history.EqualSnapshots(history.EntityContact, snapshot, want)
+	if err != nil || !equal {
+		t.Fatalf("snapshot = %s, want authoritative %s", snapshot, want)
+	}
+}
+
+func assertSnapshotExactlyMatchesCompany(t *testing.T, snapshot json.RawMessage, company *models.Company) {
+	t.Helper()
+	want := mustMarkdownCompanySnapshot(t, company)
+	equal, err := history.EqualSnapshots(history.EntityCompany, snapshot, want)
+	if err != nil || !equal {
+		t.Fatalf("snapshot = %s, want authoritative %s", snapshot, want)
+	}
+}
+
+func copyCommittedEventToPending(t *testing.T, store *MarkdownStore, event *history.Event) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(store.historyEventsDir(), event.ID.String()+".json")) //nolint:gosec // test path is under t.TempDir.
+	if err != nil {
+		t.Fatalf("ReadFile committed event: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(store.historyPendingDir(), event.ID.String()+".json"), data, 0o600); err != nil { //nolint:gosec // Test path is under t.TempDir and event ID is validated.
+		t.Fatalf("WriteFile pending copy: %v", err)
+	}
 }
 
 func cloneMapForTest(source map[string]any) map[string]any {

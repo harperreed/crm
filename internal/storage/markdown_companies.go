@@ -124,7 +124,8 @@ func (s *MarkdownStore) findCompanyFile(id uuid.UUID) (string, *models.Company, 
 func (s *MarkdownStore) CreateCompany(company *models.Company) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	after, err := markdownCompanySnapshot(company)
+	candidate := canonicalMarkdownCompany(company)
+	after, err := markdownCompanySnapshot(candidate)
 	if err != nil {
 		return fmt.Errorf("snapshot company: %w", err)
 	}
@@ -270,6 +271,7 @@ func (s *MarkdownStore) UpdateCompany(company *models.Company) error {
 		return fmt.Errorf("snapshot current company: %w", err)
 	}
 	candidate := *company
+	canonicalizeMarkdownCompanyCollections(&candidate)
 	candidate.CreatedAt = existing.CreatedAt
 	requestedUpdatedAt := candidate.UpdatedAt
 	candidate.UpdatedAt = existing.UpdatedAt
@@ -284,11 +286,7 @@ func (s *MarkdownStore) UpdateCompany(company *models.Company) error {
 	if len(changed) == 0 {
 		return nil
 	}
-	if requestedUpdatedAt.IsZero() || requestedUpdatedAt.Before(existing.UpdatedAt) {
-		candidate.UpdatedAt = s.now()
-	} else {
-		candidate.UpdatedAt = requestedUpdatedAt
-	}
+	candidate.UpdatedAt = requestedUpdatedAt
 	after, err = markdownCompanySnapshot(&candidate)
 	if err != nil {
 		return fmt.Errorf("snapshot updated company: %w", err)

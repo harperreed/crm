@@ -18,7 +18,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/models"
-	"github.com/harperreed/mdstore"
 	"gopkg.in/yaml.v3"
 )
 
@@ -575,11 +574,41 @@ func markdownContactSnapshot(contact *models.Contact) (json.RawMessage, error) {
 	return history.SnapshotContact(&normalized)
 }
 
+func canonicalMarkdownContact(contact *models.Contact) *models.Contact {
+	candidate := *contact
+	canonicalizeMarkdownContactCollections(&candidate)
+	return &candidate
+}
+
+func canonicalizeMarkdownContactCollections(contact *models.Contact) {
+	if contact.Fields == nil {
+		contact.Fields = make(map[string]any)
+	}
+	if contact.Tags == nil {
+		contact.Tags = []string{}
+	}
+}
+
 func markdownCompanySnapshot(company *models.Company) (json.RawMessage, error) {
 	normalized := *company
 	normalized.CreatedAt = company.CreatedAt.UTC()
 	normalized.UpdatedAt = company.UpdatedAt.UTC()
 	return history.SnapshotCompany(&normalized)
+}
+
+func canonicalMarkdownCompany(company *models.Company) *models.Company {
+	candidate := *company
+	canonicalizeMarkdownCompanyCollections(&candidate)
+	return &candidate
+}
+
+func canonicalizeMarkdownCompanyCollections(company *models.Company) {
+	if company.Fields == nil {
+		company.Fields = make(map[string]any)
+	}
+	if company.Tags == nil {
+		company.Tags = []string{}
+	}
 }
 
 func markdownRelationshipSnapshot(relationship *models.Relationship) (json.RawMessage, error) {
@@ -811,12 +840,12 @@ func readContactFileStrict(path string) (*models.Contact, error) {
 	if err != nil {
 		return nil, err
 	}
-	yamlText, _ := mdstore.ParseFrontmatter(string(data))
-	if strings.TrimSpace(yamlText) == "" {
-		return nil, errors.New("contact file has no YAML frontmatter")
+	yamlText, err := parseStrictMarkdownFrontmatter(data)
+	if err != nil {
+		return nil, err
 	}
 	var frontmatter contactFrontmatter
-	if err := strictYAMLUnmarshal([]byte(yamlText), &frontmatter); err != nil {
+	if err := strictYAMLUnmarshal(yamlText, &frontmatter); err != nil {
 		return nil, err
 	}
 	return frontmatterToContact(frontmatter)
@@ -827,15 +856,41 @@ func readCompanyFileStrict(path string) (*models.Company, error) {
 	if err != nil {
 		return nil, err
 	}
-	yamlText, _ := mdstore.ParseFrontmatter(string(data))
-	if strings.TrimSpace(yamlText) == "" {
-		return nil, errors.New("company file has no YAML frontmatter")
+	yamlText, err := parseStrictMarkdownFrontmatter(data)
+	if err != nil {
+		return nil, err
 	}
 	var frontmatter companyFrontmatter
-	if err := strictYAMLUnmarshal([]byte(yamlText), &frontmatter); err != nil {
+	if err := strictYAMLUnmarshal(yamlText, &frontmatter); err != nil {
 		return nil, err
 	}
 	return frontmatterToCompany(frontmatter)
+}
+
+func parseStrictMarkdownFrontmatter(data []byte) ([]byte, error) {
+	normalized := strings.ReplaceAll(string(data), "\r\n", "\n")
+	lines := strings.Split(normalized, "\n")
+	if len(lines) == 0 || lines[0] != "---" {
+		return nil, errors.New("markdown file must start with an exact --- delimiter line")
+	}
+	closing := -1
+	for index := 1; index < len(lines); index++ {
+		if lines[index] == "---" {
+			closing = index
+			break
+		}
+		if strings.HasPrefix(lines[index], "---") {
+			return nil, fmt.Errorf("malformed frontmatter delimiter on line %d", index+1)
+		}
+	}
+	if closing < 0 {
+		return nil, errors.New("markdown frontmatter has no exact closing --- delimiter line")
+	}
+	yamlText := strings.Join(lines[1:closing], "\n")
+	if strings.TrimSpace(yamlText) == "" {
+		return nil, errors.New("markdown frontmatter is empty")
+	}
+	return []byte(yamlText), nil
 }
 
 func (s *MarkdownStore) readRelationshipsStrict() ([]relationshipEntry, []*models.Relationship, error) {

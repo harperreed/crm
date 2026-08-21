@@ -127,7 +127,8 @@ func (s *MarkdownStore) findContactFile(id uuid.UUID) (string, *models.Contact, 
 func (s *MarkdownStore) CreateContact(contact *models.Contact) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	after, err := markdownContactSnapshot(contact)
+	candidate := canonicalMarkdownContact(contact)
+	after, err := markdownContactSnapshot(candidate)
 	if err != nil {
 		return fmt.Errorf("snapshot contact: %w", err)
 	}
@@ -276,6 +277,7 @@ func (s *MarkdownStore) UpdateContact(contact *models.Contact) error {
 		return fmt.Errorf("snapshot current contact: %w", err)
 	}
 	candidate := *contact
+	canonicalizeMarkdownContactCollections(&candidate)
 	candidate.CreatedAt = existing.CreatedAt
 	requestedUpdatedAt := candidate.UpdatedAt
 	candidate.UpdatedAt = existing.UpdatedAt
@@ -290,11 +292,7 @@ func (s *MarkdownStore) UpdateContact(contact *models.Contact) error {
 	if len(changed) == 0 {
 		return nil
 	}
-	if requestedUpdatedAt.IsZero() || requestedUpdatedAt.Before(existing.UpdatedAt) {
-		candidate.UpdatedAt = s.now()
-	} else {
-		candidate.UpdatedAt = requestedUpdatedAt
-	}
+	candidate.UpdatedAt = requestedUpdatedAt
 	after, err = markdownContactSnapshot(&candidate)
 	if err != nil {
 		return fmt.Errorf("snapshot updated contact: %w", err)
