@@ -69,7 +69,7 @@ ListHistory(entityIDOrPrefix, limit) -> newest-first event summaries
 GetHistoryEvent(eventIDOrPrefix) -> full event
 ```
 
-Both methods accept full UUIDs or prefixes of at least six characters. Prefixes resolve against committed history, so deleted entities and relationships remain addressable. Multiple matching IDs return the existing ambiguity error. A missing event or entity uses a history-specific not-found error.
+Both methods accept full UUIDs or prefixes of at least six characters. Prefixes resolve against committed history, so deleted entities and relationships remain addressable. Multiple matching IDs return the existing ambiguity error. `ListHistory` returns an empty list when no committed event matches; this is also how legacy entities with no recorded history appear. A missing event in `GetHistoryEvent` uses a history-specific not-found error.
 
 Limits default to 20 at the public interfaces and may not exceed 100. Storage orders events by occurrence time descending, then event ID for deterministic ties.
 
@@ -188,7 +188,7 @@ All existing MCP mutations run against a store opened with source `mcp`; CLI mut
 - Failed creates, updates, and deletes produce no committed history.
 - SQLite rolls back both state and history on every error.
 - Markdown may leave a pending operation after an error; recovery resolves only known before/after states.
-- History prefix validation distinguishes too-short, ambiguous, and missing identifiers.
+- History prefix validation distinguishes too-short and ambiguous identifiers. Timeline lookups with no committed match return an empty list; event lookups with no match return a history-specific error.
 - Invalid event JSON, unknown schema versions, and recovery conflicts are explicit errors.
 - Limits below one use the public default; limits above 100 fail validation rather than allocating an unbounded result.
 
