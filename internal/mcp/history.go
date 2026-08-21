@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -47,7 +48,7 @@ func (s *Server) handleListHistory(_ context.Context, req *mcp.CallToolRequest) 
 	if err := json.Unmarshal(req.Params.Arguments, &params); err != nil {
 		return errResult(fmt.Sprintf("invalid arguments: %v", err))
 	}
-	if params.EntityID == "" {
+	if strings.TrimSpace(params.EntityID) == "" {
 		return errResult("entity_id is required")
 	}
 
@@ -65,7 +66,7 @@ func (s *Server) handleGetHistoryEvent(_ context.Context, req *mcp.CallToolReque
 	if err := json.Unmarshal(req.Params.Arguments, &params); err != nil {
 		return errResult(fmt.Sprintf("invalid arguments: %v", err))
 	}
-	if params.EventID == "" {
+	if strings.TrimSpace(params.EventID) == "" {
 		return errResult("event_id is required")
 	}
 

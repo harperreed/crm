@@ -5,7 +5,9 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -57,6 +59,7 @@ func TestHistoryToolsTransport(t *testing.T) {
 	assertHistorySummaries(t, summaries, created.ID)
 	event := getHistoryEventThroughTransport(t, ctx, clientSession, summaries[0].ID.String())
 	assertUpdateHistoryEvent(t, event, summaries[0].ID, created.ID, createdSnapshot, updatedSnapshot)
+	assertHistoryLimitBehavior(t, ctx, clientSession, created.ID)
 	assertEmptyHistoryIDsRejected(t, ctx, clientSession)
 }
 
@@ -121,8 +124,14 @@ func assertHistorySummaries(t *testing.T, summaries []*history.Summary, entityID
 
 func assertUpdateHistoryEvent(t *testing.T, event *history.Event, eventID, entityID uuid.UUID, before, after json.RawMessage) {
 	t.Helper()
+	if err := event.Validate(); err != nil {
+		t.Errorf("history event validation: %v", err)
+	}
 	if event.ID != eventID || event.EntityID != entityID {
 		t.Errorf("event identity = (%s, %s), want (%s, %s)", event.ID, event.EntityID, eventID, entityID)
+	}
+	if want := []uuid.UUID{entityID}; !slices.Equal(event.RelatedEntityIDs, want) {
+		t.Errorf("event related entity IDs = %v, want %v", event.RelatedEntityIDs, want)
 	}
 	if event.Action != history.ActionUpdate || event.Source != history.SourceMCP {
 		t.Errorf("event action/source = %q/%q, want update/mcp", event.Action, event.Source)
@@ -131,14 +140,48 @@ func assertUpdateHistoryEvent(t *testing.T, event *history.Event, eventID, entit
 	assertExactContactSnapshot(t, "after", event.After, after)
 }
 
+func assertHistoryLimitBehavior(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession, entityID uuid.UUID) {
+	t.Helper()
+	for index := 0; index < history.DefaultLimit-1; index++ {
+		callContactTool(t, ctx, session, "update_contact", map[string]any{
+			"id":    entityID.String(),
+			"phone": fmt.Sprintf("+1-555-%04d", index+200),
+		})
+	}
+	summaries := listHistoryThroughTransport(t, ctx, session, map[string]any{"entity_id": entityID.String()})
+	if len(summaries) != history.DefaultLimit {
+		t.Errorf("list_history with omitted limit returned %d events, want default %d", len(summaries), history.DefaultLimit)
+	}
+
+	result, err := session.CallTool(ctx, &sdkmcp.CallToolParams{
+		Name: "list_history",
+		Arguments: map[string]any{
+			"entity_id": entityID.String(),
+			"limit":     history.MaxLimit + 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool list_history with excessive limit: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("list_history with excessive limit returned success")
+	}
+	if got, want := contentText(result), "list history: history limit must not exceed 100"; got != want {
+		t.Errorf("list_history excessive-limit error = %q, want %q", got, want)
+	}
+}
+
 func assertEmptyHistoryIDsRejected(t *testing.T, ctx context.Context, session *sdkmcp.ClientSession) {
 	t.Helper()
 	for _, test := range []struct {
 		name      string
 		arguments map[string]any
+		want      string
 	}{
-		{name: "list_history", arguments: map[string]any{"entity_id": ""}},
-		{name: "get_history_event", arguments: map[string]any{"event_id": ""}},
+		{name: "list_history", arguments: map[string]any{"entity_id": ""}, want: "entity_id is required"},
+		{name: "list_history", arguments: map[string]any{"entity_id": " \t"}, want: "entity_id is required"},
+		{name: "get_history_event", arguments: map[string]any{"event_id": ""}, want: "event_id is required"},
+		{name: "get_history_event", arguments: map[string]any{"event_id": " \t"}, want: "event_id is required"},
 	} {
 		result, callErr := session.CallTool(ctx, &sdkmcp.CallToolParams{Name: test.name, Arguments: test.arguments})
 		if callErr != nil {
@@ -146,6 +189,9 @@ func assertEmptyHistoryIDsRejected(t *testing.T, ctx context.Context, session *s
 		}
 		if !result.IsError {
 			t.Errorf("%s with empty ID returned success", test.name)
+		}
+		if got := contentText(result); got != test.want {
+			t.Errorf("%s with ID %q error = %q, want %q", test.name, test.arguments, got, test.want)
 		}
 	}
 }
