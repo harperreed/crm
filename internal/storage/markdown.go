@@ -3,8 +3,11 @@
 package storage
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,7 +39,7 @@ func NewMarkdownStore(dataDir string, source history.Source) (*MarkdownStore, er
 		filepath.Join(dataDir, "_history", "events"),
 		filepath.Join(dataDir, "_history", "pending"),
 	} {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
+		if err := ensureDurableDirectory(dir); err != nil {
 			return nil, err
 		}
 	}
@@ -45,6 +48,40 @@ func NewMarkdownStore(dataDir string, source history.Source) (*MarkdownStore, er
 		return nil, err
 	}
 	return store, nil
+}
+
+func ensureDurableDirectory(path string) error {
+	path = filepath.Clean(path)
+	missing := make([]string, 0)
+	current := path
+	for {
+		info, err := os.Lstat(current)
+		if err == nil {
+			if !info.IsDir() {
+				return fmt.Errorf("directory path %s is not a directory", current)
+			}
+			break
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect directory path %s: %w", current, err)
+		}
+		missing = append(missing, current)
+		parent := filepath.Dir(current)
+		if parent == current {
+			return fmt.Errorf("find existing parent for directory %s", path)
+		}
+		current = parent
+	}
+	for index := len(missing) - 1; index >= 0; index-- {
+		dir := missing[index]
+		if err := os.Mkdir(dir, 0o750); err != nil {
+			return fmt.Errorf("create directory %s: %w", dir, err)
+		}
+		if err := syncMarkdownHistoryDirectory(filepath.Dir(dir)); err != nil {
+			return fmt.Errorf("make directory %s durable: %w", dir, err)
+		}
+	}
+	return nil
 }
 
 // Close is a no-op for the file-based backend.
@@ -75,4 +112,26 @@ func slugForName(name, id, dir string) string {
 	}
 	// Collision: prepend first 8 chars of UUID
 	return id[:8] + "-" + base + ".md"
+}
+
+func availableSlugForName(name, id, dir, currentPath string) (string, error) {
+	base := mdstore.Slugify(name) + ".md"
+	candidates := []string{base, id[:8] + "-" + base, id + "-" + base}
+	for suffix := 0; ; suffix++ {
+		var candidate string
+		if suffix < len(candidates) {
+			candidate = candidates[suffix]
+		} else {
+			candidate = fmt.Sprintf("%s-%s-%d.md", id, strings.TrimSuffix(base, ".md"), suffix-len(candidates)+2)
+		}
+		path := filepath.Join(dir, candidate)
+		if path == currentPath {
+			return candidate, nil
+		}
+		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+			return candidate, nil
+		} else if err != nil {
+			return "", fmt.Errorf("inspect filename candidate %s: %w", path, err)
+		}
+	}
 }

@@ -93,6 +93,14 @@ func (s *MarkdownStore) writeRelationships(entries []relationshipEntry) error {
 func (s *MarkdownStore) CreateRelationship(rel *models.Relationship) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.recoverPendingHistoryLocked(); err != nil {
+		return err
+	}
+	if _, err := s.findRelationshipStrict(rel.ID); err == nil {
+		return fmt.Errorf("%w: relationship %s already exists", ErrHistoryConflict, rel.ID)
+	} else if !errors.Is(err, ErrRelationshipNotFound) {
+		return err
+	}
 	after, err := markdownRelationshipSnapshot(rel)
 	if err != nil {
 		return fmt.Errorf("snapshot relationship: %w", err)
@@ -139,6 +147,9 @@ func (s *MarkdownStore) ListRelationships(entityID uuid.UUID) ([]*models.Relatio
 func (s *MarkdownStore) DeleteRelationship(id uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.recoverPendingHistoryLocked(); err != nil {
+		return err
+	}
 	relationship, err := s.findRelationshipStrict(id)
 	if errors.Is(err, ErrRelationshipNotFound) {
 		return ErrRelationshipNotFound

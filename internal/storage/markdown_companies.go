@@ -16,13 +16,13 @@ import (
 
 // companyFrontmatter is the YAML representation of a company stored in frontmatter.
 type companyFrontmatter struct {
-	ID        string         `yaml:"id"`
-	Name      string         `yaml:"name"`
-	Domain    string         `yaml:"domain,omitempty"`
-	Fields    map[string]any `yaml:"fields,omitempty"`
-	Tags      []string       `yaml:"tags,omitempty"`
-	CreatedAt string         `yaml:"created_at"`
-	UpdatedAt string         `yaml:"updated_at"`
+	ID        string          `yaml:"id"`
+	Name      string          `yaml:"name"`
+	Domain    string          `yaml:"domain,omitempty"`
+	Fields    exactYAMLFields `yaml:"fields,omitempty"`
+	Tags      []string        `yaml:"tags,omitempty"`
+	CreatedAt string          `yaml:"created_at"`
+	UpdatedAt string          `yaml:"updated_at"`
 }
 
 // companyToFrontmatter converts a models.Company to its YAML frontmatter representation.
@@ -31,7 +31,7 @@ func companyToFrontmatter(c *models.Company) companyFrontmatter {
 		ID:        c.ID.String(),
 		Name:      c.Name,
 		Domain:    c.Domain,
-		Fields:    c.Fields,
+		Fields:    exactYAMLFields(c.Fields),
 		Tags:      c.Tags,
 		CreatedAt: mdstore.FormatTime(c.CreatedAt),
 		UpdatedAt: mdstore.FormatTime(c.UpdatedAt),
@@ -52,7 +52,7 @@ func frontmatterToCompany(fm companyFrontmatter) (*models.Company, error) {
 	if err != nil {
 		return nil, err
 	}
-	fields := fm.Fields
+	fields := map[string]any(fm.Fields)
 	if fields == nil {
 		fields = make(map[string]any)
 	}
@@ -79,6 +79,15 @@ func (s *MarkdownStore) writeCompany(c *models.Company, filename string) error {
 		return err
 	}
 	return mdstore.AtomicWrite(filepath.Join(s.companiesDir(), filename), []byte(content))
+}
+
+func (s *MarkdownStore) writeCompanyNew(c *models.Company, filename string) error {
+	fm := companyToFrontmatter(c)
+	content, err := mdstore.RenderFrontmatter(fm, "")
+	if err != nil {
+		return err
+	}
+	return atomicWriteNoReplace(filepath.Join(s.companiesDir(), filename), []byte(content))
 }
 
 // readCompanyFile reads a single company .md file and returns the company.
@@ -124,6 +133,16 @@ func (s *MarkdownStore) findCompanyFile(id uuid.UUID) (string, *models.Company, 
 func (s *MarkdownStore) CreateCompany(company *models.Company) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.recoverPendingHistoryLocked(); err != nil {
+		return err
+	}
+	_, existing, err := s.findCompanyFileStrict(company.ID)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		return fmt.Errorf("%w: company %s already exists", ErrHistoryConflict, company.ID)
+	}
 	candidate := canonicalMarkdownCompany(company)
 	after, err := markdownCompanySnapshot(candidate)
 	if err != nil {
@@ -259,6 +278,9 @@ func companyMatchesSearch(c *models.Company, query string) bool {
 func (s *MarkdownStore) UpdateCompany(company *models.Company) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.recoverPendingHistoryLocked(); err != nil {
+		return err
+	}
 	_, existing, err := s.findCompanyFileStrict(company.ID)
 	if err != nil {
 		return err
@@ -311,6 +333,9 @@ func (s *MarkdownStore) UpdateCompany(company *models.Company) error {
 func (s *MarkdownStore) DeleteCompany(id uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.recoverPendingHistoryLocked(); err != nil {
+		return err
+	}
 	_, company, err := s.findCompanyFileStrict(id)
 	if err != nil {
 		return err

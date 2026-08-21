@@ -47,7 +47,7 @@ func TestSyncMarkdownHistoryDirectory(t *testing.T) {
 		if err == nil {
 			t.Fatal("syncMarkdownHistoryDirectory() error = nil")
 		}
-		if !strings.Contains(err.Error(), "open history events directory") {
+		if !strings.Contains(err.Error(), "open directory") || !strings.Contains(err.Error(), path) {
 			t.Fatalf("syncMarkdownHistoryDirectory() error = %q", err)
 		}
 	})
@@ -680,6 +680,76 @@ func TestMarkdownHistoryNilCollectionsAreCanonical(t *testing.T) { //nolint:goco
 	})
 }
 
+func TestMarkdownHistoryPreservesExactJSONNumbers(t *testing.T) {
+	values := map[string]any{
+		"decimal":       json.Number("0.123456789012345678901234567890"),
+		"negative_zero": json.Number("-0"),
+		"exponent":      json.Number("1e+400"),
+		"uint64":        json.Number("18446744073709551615"),
+		"beyond":        json.Number("184467440737095516150"),
+		"nested":        []any{json.Number("1.0000000000000000001"), map[string]any{"value": json.Number("9e-999")}},
+	}
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	store := newTestMarkdownStore(t)
+	contact := &models.Contact{ID: uuid.New(), Name: "Numbers", Fields: values, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+	company := &models.Company{ID: uuid.New(), Name: "Numbers", Fields: values, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+	if err := store.CreateContact(contact); err != nil {
+		t.Fatalf("CreateContact: %v", err)
+	}
+	if err := store.CreateCompany(company); err != nil {
+		t.Fatalf("CreateCompany: %v", err)
+	}
+	for entity, fields := range map[string]map[string]any{"contact": mustGetContact(t, store, contact.ID).Fields, "company": mustGetCompany(t, store, company.ID).Fields} {
+		for key, want := range values {
+			wantJSON, err := json.Marshal(want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotJSON, err := json.Marshal(fields[key])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(gotJSON, wantJSON) {
+				t.Fatalf("%s %s = %s, want %s", entity, key, gotJSON, wantJSON)
+			}
+		}
+	}
+}
+
+func TestMarkdownFrontmatterAcceptsNullFields(t *testing.T) {
+	id := uuid.New().String()
+	now := "2026-08-21T20:00:00Z"
+	t.Run("contact", func(t *testing.T) {
+		var frontmatter contactFrontmatter
+		data := []byte(fmt.Sprintf("id: %s\nname: Null Fields\nfields: null\ncreated_at: %s\nupdated_at: %s\n", id, now, now))
+		if err := strictYAMLUnmarshal(data, &frontmatter); err != nil {
+			t.Fatalf("strictYAMLUnmarshal: %v", err)
+		}
+		contact, err := frontmatterToContact(frontmatter)
+		if err != nil {
+			t.Fatalf("frontmatterToContact: %v", err)
+		}
+		if contact.Fields == nil || len(contact.Fields) != 0 {
+			t.Fatalf("Fields = %#v, want nonnil empty map", contact.Fields)
+		}
+	})
+
+	t.Run("company", func(t *testing.T) {
+		var frontmatter companyFrontmatter
+		data := []byte(fmt.Sprintf("id: %s\nname: Null Fields\nfields: null\ncreated_at: %s\nupdated_at: %s\n", id, now, now))
+		if err := strictYAMLUnmarshal(data, &frontmatter); err != nil {
+			t.Fatalf("strictYAMLUnmarshal: %v", err)
+		}
+		company, err := frontmatterToCompany(frontmatter)
+		if err != nil {
+			t.Fatalf("frontmatterToCompany: %v", err)
+		}
+		if company.Fields == nil || len(company.Fields) != 0 {
+			t.Fatalf("Fields = %#v, want nonnil empty map", company.Fields)
+		}
+	})
+}
+
 func TestMarkdownRecoveryAppliesPendingUpdate(t *testing.T) {
 	dataDir := t.TempDir()
 	store, err := NewMarkdownStore(dataDir, history.SourceCLI)
@@ -1083,6 +1153,84 @@ func TestMarkdownRecoveryAcceptsRenamedContactAfterStateAtOldFilename(t *testing
 	if _, err := recovered.GetHistoryEvent(event.ID.String()); err != nil {
 		t.Fatalf("GetHistoryEvent: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(recovered.contactsDir(), oldFilename)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old filename remains after recovery: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(recovered.contactsDir(), "new-name.md")); err != nil {
+		t.Fatalf("repaired filename: %v", err)
+	}
+}
+
+func TestMarkdownRecoveryRepairsLinkedRenameIntermediate(t *testing.T) {
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	for _, entityType := range []history.EntityType{history.EntityContact, history.EntityCompany} {
+		t.Run(string(entityType), func(t *testing.T) {
+			dataDir := t.TempDir()
+			store, err := NewMarkdownStore(dataDir, history.SourceCLI)
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := uuid.New()
+			var event *history.Event
+			var oldPath, newPath string
+			if entityType == history.EntityContact {
+				before := &models.Contact{ID: id, Name: "Old", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+				after := cloneContactForTest(before)
+				after.Name = "New"
+				after.UpdatedAt = now.Add(time.Minute)
+				oldPath, newPath = filepath.Join(store.contactsDir(), "old.md"), filepath.Join(store.contactsDir(), "new.md")
+				if err := store.writeContact(after, "old.md"); err != nil {
+					t.Fatal(err)
+				}
+				event = mustHistoryEventForTest(t, entityType, id, []uuid.UUID{id}, history.ActionUpdate, mustMarkdownContactSnapshot(t, before), mustMarkdownContactSnapshot(t, after), now.Add(time.Minute))
+			} else {
+				before := &models.Company{ID: id, Name: "Old", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+				after := cloneCompanyForTest(before)
+				after.Name = "New"
+				after.UpdatedAt = now.Add(time.Minute)
+				oldPath, newPath = filepath.Join(store.companiesDir(), "old.md"), filepath.Join(store.companiesDir(), "new.md")
+				if err := store.writeCompany(after, "old.md"); err != nil {
+					t.Fatal(err)
+				}
+				event = mustHistoryEventForTest(t, entityType, id, []uuid.UUID{id}, history.ActionUpdate, mustMarkdownCompanySnapshot(t, before), mustMarkdownCompanySnapshot(t, after), now.Add(time.Minute))
+			}
+			if err := os.Link(oldPath, newPath); err != nil {
+				t.Fatal(err)
+			}
+			writePendingHistoryForTest(t, store, event)
+			if _, err := NewMarkdownStore(dataDir, history.SourceCLI); err != nil {
+				t.Fatalf("recovery: %v", err)
+			}
+			if _, err := os.Stat(oldPath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("old path remains: %v", err)
+			}
+			if _, err := os.Stat(newPath); err != nil {
+				t.Fatalf("new path: %v", err)
+			}
+		})
+	}
+}
+
+func TestEnsureDurableDirectory(t *testing.T) {
+	t.Run("creates nested path", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "one", "two", "three")
+		if err := ensureDurableDirectory(path); err != nil {
+			t.Fatalf("ensureDurableDirectory: %v", err)
+		}
+		if info, err := os.Stat(path); err != nil || !info.IsDir() {
+			t.Fatalf("Stat = %#v, %v", info, err)
+		}
+	})
+	t.Run("rejects file component", func(t *testing.T) {
+		root := t.TempDir()
+		file := filepath.Join(root, "file")
+		if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := ensureDurableDirectory(filepath.Join(file, "child")); err == nil {
+			t.Fatal("error = nil")
+		}
+	})
 }
 
 func TestMarkdownRecoveryRejectsDuplicateCurrentEntityIDs(t *testing.T) {
@@ -1198,6 +1346,131 @@ func TestMarkdownPendingRejectsFIFOWithTempSuffix(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), path) {
 		t.Fatalf("NewMarkdownStore error = %q, want path %q", err, path)
+	}
+}
+
+func TestMarkdownMutationDrainsPendingBeforeNextMutation(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	contact := &models.Contact{ID: uuid.New(), Name: "Initial", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+	if err := store.CreateContact(contact); err != nil {
+		t.Fatal(err)
+	}
+	eventsDir := store.historyEventsDir()
+	backupDir := eventsDir + "-backup"
+	if err := os.Rename(eventsDir, backupDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(eventsDir, []byte("blocks publication"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	first := cloneContactForTest(contact)
+	first.Name = "First"
+	first.UpdatedAt = now.Add(time.Minute)
+	if err := store.UpdateContact(first); err == nil {
+		t.Fatal("first update error = nil")
+	}
+	if err := os.Remove(eventsDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(backupDir, eventsDir); err != nil {
+		t.Fatal(err)
+	}
+	second := cloneContactForTest(first)
+	second.Name = "Second"
+	second.UpdatedAt = now.Add(2 * time.Minute)
+	if err := store.UpdateContact(second); err != nil {
+		t.Fatalf("second update: %v", err)
+	}
+	entries, err := os.ReadDir(store.historyPendingDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("pending entries = %d, want 0", len(entries))
+	}
+	if got := mustGetContact(t, store, contact.ID); got.Name != "Second" {
+		t.Fatalf("name = %q", got.Name)
+	}
+}
+
+func TestMarkdownDuplicateCreatesLeaveStoreHealthy(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	contact := &models.Contact{ID: uuid.New(), Name: "Contact", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+	company := &models.Company{ID: uuid.New(), Name: "Company", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+	rel := &models.Relationship{ID: uuid.New(), SourceID: contact.ID, TargetID: company.ID, Type: "works_at", CreatedAt: now}
+	if err := store.CreateContact(contact); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateCompany(company); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateRelationship(rel); err != nil {
+		t.Fatal(err)
+	}
+	for name, create := range map[string]func() error{
+		"contact": func() error {
+			duplicate := cloneContactForTest(contact)
+			duplicate.Name = "Other"
+			return store.CreateContact(duplicate)
+		},
+		"company": func() error {
+			duplicate := cloneCompanyForTest(company)
+			duplicate.Name = "Other"
+			return store.CreateCompany(duplicate)
+		},
+		"relationship": func() error { duplicate := *rel; duplicate.Type = "other"; return store.CreateRelationship(&duplicate) },
+	} {
+		if err := create(); err == nil {
+			t.Fatalf("duplicate %s error = nil", name)
+		}
+	}
+	if entries, err := os.ReadDir(store.historyPendingDir()); err != nil || len(entries) != 0 {
+		t.Fatalf("pending = %v, %v", entries, err)
+	}
+	if _, err := NewMarkdownStore(store.dataDir, history.SourceCLI); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+}
+
+func TestMarkdownCreateFilenameCollisionsDoNotOverwrite(t *testing.T) {
+	store := newTestMarkdownStore(t)
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, time.UTC)
+	ids := []uuid.UUID{uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000001"), uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000002"), uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000003")}
+	for _, id := range ids {
+		if err := store.CreateContact(&models.Contact{ID: id, Name: "Same Name", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("CreateContact(%s): %v", id, err)
+		}
+	}
+	for _, id := range ids {
+		if got := mustGetContact(t, store, id); got.ID != id {
+			t.Fatalf("contact ID = %s", got.ID)
+		}
+	}
+	entries, err := os.ReadDir(store.contactsDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("contact files = %d, want 3", len(entries))
+	}
+	for _, id := range ids {
+		if err := store.CreateCompany(&models.Company{ID: id, Name: "Same Name", Fields: map[string]any{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("CreateCompany(%s): %v", id, err)
+		}
+	}
+	for _, id := range ids {
+		if got := mustGetCompany(t, store, id); got.ID != id {
+			t.Fatalf("company ID = %s", got.ID)
+		}
+	}
+	entries, err = os.ReadDir(store.companiesDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("company files = %d, want 3", len(entries))
 	}
 }
 

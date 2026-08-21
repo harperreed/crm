@@ -16,14 +16,14 @@ import (
 
 // contactFrontmatter is the YAML representation of a contact stored in frontmatter.
 type contactFrontmatter struct {
-	ID        string         `yaml:"id"`
-	Name      string         `yaml:"name"`
-	Email     string         `yaml:"email,omitempty"`
-	Phone     string         `yaml:"phone,omitempty"`
-	Fields    map[string]any `yaml:"fields,omitempty"`
-	Tags      []string       `yaml:"tags,omitempty"`
-	CreatedAt string         `yaml:"created_at"`
-	UpdatedAt string         `yaml:"updated_at"`
+	ID        string          `yaml:"id"`
+	Name      string          `yaml:"name"`
+	Email     string          `yaml:"email,omitempty"`
+	Phone     string          `yaml:"phone,omitempty"`
+	Fields    exactYAMLFields `yaml:"fields,omitempty"`
+	Tags      []string        `yaml:"tags,omitempty"`
+	CreatedAt string          `yaml:"created_at"`
+	UpdatedAt string          `yaml:"updated_at"`
 }
 
 // contactToFrontmatter converts a models.Contact to its YAML frontmatter representation.
@@ -33,7 +33,7 @@ func contactToFrontmatter(c *models.Contact) contactFrontmatter {
 		Name:      c.Name,
 		Email:     c.Email,
 		Phone:     c.Phone,
-		Fields:    c.Fields,
+		Fields:    exactYAMLFields(c.Fields),
 		Tags:      c.Tags,
 		CreatedAt: mdstore.FormatTime(c.CreatedAt),
 		UpdatedAt: mdstore.FormatTime(c.UpdatedAt),
@@ -54,7 +54,7 @@ func frontmatterToContact(fm contactFrontmatter) (*models.Contact, error) {
 	if err != nil {
 		return nil, err
 	}
-	fields := fm.Fields
+	fields := map[string]any(fm.Fields)
 	if fields == nil {
 		fields = make(map[string]any)
 	}
@@ -82,6 +82,15 @@ func (s *MarkdownStore) writeContact(c *models.Contact, filename string) error {
 		return err
 	}
 	return mdstore.AtomicWrite(filepath.Join(s.contactsDir(), filename), []byte(content))
+}
+
+func (s *MarkdownStore) writeContactNew(c *models.Contact, filename string) error {
+	fm := contactToFrontmatter(c)
+	content, err := mdstore.RenderFrontmatter(fm, "")
+	if err != nil {
+		return err
+	}
+	return atomicWriteNoReplace(filepath.Join(s.contactsDir(), filename), []byte(content))
 }
 
 // readContactFile reads a single contact .md file and returns the contact and filename.
@@ -127,6 +136,16 @@ func (s *MarkdownStore) findContactFile(id uuid.UUID) (string, *models.Contact, 
 func (s *MarkdownStore) CreateContact(contact *models.Contact) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.recoverPendingHistoryLocked(); err != nil {
+		return err
+	}
+	_, existing, err := s.findContactFileStrict(contact.ID)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		return fmt.Errorf("%w: contact %s already exists", ErrHistoryConflict, contact.ID)
+	}
 	candidate := canonicalMarkdownContact(contact)
 	after, err := markdownContactSnapshot(candidate)
 	if err != nil {
@@ -265,6 +284,9 @@ func contactMatchesSearch(c *models.Contact, query string) bool {
 func (s *MarkdownStore) UpdateContact(contact *models.Contact) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.recoverPendingHistoryLocked(); err != nil {
+		return err
+	}
 	_, existing, err := s.findContactFileStrict(contact.ID)
 	if err != nil {
 		return err
@@ -317,6 +339,9 @@ func (s *MarkdownStore) UpdateContact(contact *models.Contact) error {
 func (s *MarkdownStore) DeleteContact(id uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.recoverPendingHistoryLocked(); err != nil {
+		return err
+	}
 	_, contact, err := s.findContactFileStrict(id)
 	if err != nil {
 		return err
