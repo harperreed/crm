@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/harperreed/crm/internal/config"
 )
@@ -21,7 +22,7 @@ func TestCLIHistoryBothBackends(t *testing.T) {
 	//nolint:gosec // The fixed Go tool builds this repository's CLI to a test-owned path.
 	build := exec.Command("go", "build", "-o", binaryPath, "./cmd/crm")
 	build.Dir = ".."
-	build.Env = withoutEnvironment(os.Environ(), "GOROOT")
+	build.Env = os.Environ()
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build crm: %v\n%s", err, output)
 	}
@@ -105,7 +106,7 @@ func configureCLIHistory(t *testing.T, backend string) []string {
 	if err := os.WriteFile(filepath.Join(configDir, "config.json"), encoded, 0o600); err != nil {
 		t.Fatalf("WriteFile config: %v", err)
 	}
-	env := withoutEnvironment(os.Environ(), "GOROOT", "XDG_CONFIG_HOME", "XDG_DATA_HOME")
+	env := withoutEnvironment(os.Environ(), "XDG_CONFIG_HOME", "XDG_DATA_HOME")
 	return append(env, "XDG_CONFIG_HOME="+configHome, "XDG_DATA_HOME="+dataHome)
 }
 
@@ -136,11 +137,22 @@ func assertCLIHistoryLines(t *testing.T, output string, wantCount int) {
 	if len(lines) != wantCount {
 		t.Fatalf("history line count = %d, want %d:\n%s", len(lines), wantCount, output)
 	}
-	for _, line := range lines {
+	var previousTimestamp time.Time
+	for index, line := range lines {
 		fields := strings.Fields(line)
-		if len(fields) < 5 || !strings.HasSuffix(fields[0], "Z") || fields[3] != "[cli]" || len(fields[4]) != 8 {
+		if len(fields) < 5 || fields[3] != "[cli]" || len(fields[4]) != 8 {
 			t.Errorf("malformed history line %q", line)
+			continue
 		}
+		timestamp, err := time.Parse(time.RFC3339, fields[0])
+		if err != nil {
+			t.Errorf("history timestamp %q is not RFC3339: %v", fields[0], err)
+			continue
+		}
+		if index > 0 && timestamp.After(previousTimestamp) {
+			t.Errorf("history timestamps are not newest first: %s appears after %s", timestamp, previousTimestamp)
+		}
+		previousTimestamp = timestamp
 	}
 }
 

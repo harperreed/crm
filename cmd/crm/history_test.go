@@ -113,6 +113,44 @@ func TestHistoryTimelineWithoutEvents(t *testing.T) {
 	}
 }
 
+func TestHistoryCommandRestoresLimitFlagBetweenRuns(t *testing.T) {
+	dataDir := configureHistoryCommand(t)
+	cfg := &config.Config{Backend: "sqlite", DataDir: dataDir}
+	testStore, err := cfg.OpenStorage(history.SourceCLI)
+	if err != nil {
+		t.Fatalf("OpenStorage: %v", err)
+	}
+	contact := models.NewContact("First Name")
+	if err := testStore.CreateContact(contact); err != nil {
+		t.Fatalf("CreateContact: %v", err)
+	}
+	for _, name := range []string{"Second Name", "Third Name"} {
+		contact.Name = name
+		contact.Touch()
+		if err := testStore.UpdateContact(contact); err != nil {
+			t.Fatalf("UpdateContact: %v", err)
+		}
+	}
+	if err := testStore.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	limited, err := runRootCommand(t, "history", contact.ID.String(), "--limit", "1")
+	if err != nil {
+		t.Fatalf("Execute limited history: %v", err)
+	}
+	if got := len(strings.Split(strings.TrimSpace(limited), "\n")); got != 1 {
+		t.Fatalf("limited history line count = %d, want 1", got)
+	}
+	unlimited, err := runRootCommand(t, "history", contact.ID.String())
+	if err != nil {
+		t.Fatalf("Execute default history: %v", err)
+	}
+	if got := len(strings.Split(strings.TrimSpace(unlimited), "\n")); got != 3 {
+		t.Errorf("default history line count = %d, want 3:\n%s", got, unlimited)
+	}
+}
+
 func TestHistoryShowFormatsEvent(t *testing.T) {
 	dataDir := configureHistoryCommand(t)
 	cfg := &config.Config{Backend: "sqlite", DataDir: dataDir}
@@ -179,6 +217,12 @@ func configureHistoryCommand(t *testing.T) string {
 
 func runRootCommand(t *testing.T, args ...string) (string, error) {
 	t.Helper()
+	limitFlag := historyCmd.Flags().Lookup("limit")
+	if limitFlag == nil {
+		t.Fatal("history limit flag is not registered")
+	}
+	previousLimit := limitFlag.Value.String()
+	previousLimitChanged := limitFlag.Changed
 	capturePath := filepath.Join(t.TempDir(), "stdout")
 	capture, err := os.Create(capturePath) //nolint:gosec // test-owned temporary path
 	if err != nil {
@@ -195,6 +239,10 @@ func runRootCommand(t *testing.T, args ...string) (string, error) {
 		rootCmd.SetOut(nil)
 		rootCmd.SetErr(nil)
 		store = nil
+		if err := limitFlag.Value.Set(previousLimit); err != nil {
+			t.Errorf("restore history limit flag: %v", err)
+		}
+		limitFlag.Changed = previousLimitChanged
 	}()
 
 	executeErr := Execute()
