@@ -33,6 +33,10 @@ func TestHistorySourceForCommand(t *testing.T) {
 }
 
 func TestRootVersionFlag(t *testing.T) {
+	if got, want := rootCmd.Version, displayVersion(); got != want {
+		t.Fatalf("rootCmd.Version = %q, want displayVersion() %q", got, want)
+	}
+
 	var output bytes.Buffer
 	var errorOutput bytes.Buffer
 	tempDir := t.TempDir()

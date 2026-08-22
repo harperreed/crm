@@ -51,6 +51,13 @@ func TestVersionForBuild(t *testing.T) {
 			buildInfoOK:   false,
 			want:          "dev",
 		},
+		{
+			name:          "nil build info keeps dev version",
+			linkerVersion: "dev",
+			buildInfo:     nil,
+			buildInfoOK:   true,
+			want:          "dev",
+		},
 	}
 
 	for _, tt := range tests {

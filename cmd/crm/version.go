@@ -12,10 +12,18 @@ import (
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Display version information",
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("crm version %s\n", displayVersion())
-		fmt.Printf("  commit: %s\n", commit)
-		fmt.Printf("  built:  %s\n", date)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		output := cmd.OutOrStdout()
+		if _, err := fmt.Fprintf(output, "crm version %s\n", displayVersion()); err != nil {
+			return fmt.Errorf("write version: %w", err)
+		}
+		if _, err := fmt.Fprintf(output, "  commit: %s\n", commit); err != nil {
+			return fmt.Errorf("write commit: %w", err)
+		}
+		if _, err := fmt.Fprintf(output, "  built:  %s\n", date); err != nil {
+			return fmt.Errorf("write build date: %w", err)
+		}
+		return nil
 	},
 }
 
