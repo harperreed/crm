@@ -505,9 +505,12 @@ If review causes changes, stage only their exact files and commit them with a co
 The inherited `GOROOT` is inconsistent. Use the verified Go 1.27 toolchain and the locally rebuilt Go 1.27 `golangci-lint` with fresh caches:
 
 ```bash
+set -euo pipefail
 test -x /tmp/crm-history-lint.jHjlhN/golangci-lint
 lint_cache=$(mktemp -d)
 go_cache=$(mktemp -d)
+test -n "$lint_cache"
+test -n "$go_cache"
 env -u GOROOT \
   PATH="/tmp/crm-history-lint.jHjlhN:/Users/harper/.cargo/bin:/Users/harper/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
   GOLANGCI_LINT_CACHE="$lint_cache" \
@@ -520,16 +523,22 @@ Expected: formatting, import formatting, lint, and every Go test pass with no wa
 **Step 4: Run vet, race, and real local binaries**
 
 ```bash
+set -euo pipefail
 go_cache=$(mktemp -d)
+test -n "$go_cache"
 env -u GOROOT GOCACHE="$go_cache" go vet ./...
 env -u GOROOT GOCACHE="$go_cache" go test -race ./... -count=1
 build_dir=$(mktemp -d)
+test -n "$build_dir"
 env -u GOROOT GOCACHE="$go_cache" go build -o "$build_dir/crm" ./cmd/crm
-"$build_dir/crm" --version
-"$build_dir/crm" version
+checkout_short_version=$("$build_dir/crm" --version)
+checkout_long_version=$("$build_dir/crm" version)
+checkout_long_first_line=${checkout_long_version%%$'\n'*}
+test "$checkout_short_version" = "crm version dev"
+test "$checkout_long_first_line" = "crm version dev"
 ```
 
-Expected: vet and race exit 0; both binary commands exit 0 and begin with `crm version dev`. Neither version command may initialize CRM storage.
+Expected: vet and race exit 0; both binary commands exit 0 and report exactly `crm version dev` on their first line. Neither version command may initialize CRM storage.
 
 **Step 5: Validate release configuration and snapshot artifacts**
 
@@ -544,13 +553,30 @@ Expected: exit 2 only for the accepted deprecated `brews` property. Any other wa
 Then run:
 
 ```bash
+set -euo pipefail
 go_cache=$(mktemp -d)
+test -n "$go_cache"
 env -u GOROOT GOCACHE="$go_cache" goreleaser release --snapshot --clean
-find dist -maxdepth 1 -type f -name 'crm_*_*.tar.gz' -print | sort
-find dist -maxdepth 1 -type f -name 'checksums.txt' -print
-for archive in dist/crm_*_*.tar.gz; do tar -tzf "$archive" | rg '/README.md$'; done
+archives=(dist/crm_*_*.tar.gz(N))
+checksum_files=(dist/checksums.txt(N))
+archive_count=${#archives[@]}
+checksum_count=${#checksum_files[@]}
+test "$archive_count" -eq 4
+test "$checksum_count" -eq 1
+for archive in "${archives[@]}"; do
+  archive_listing=$(tar -tzf "$archive")
+  archive_entries=("${(@f)archive_listing}")
+  has_readme=false
+  for archive_entry in "${archive_entries[@]}"; do
+    if [[ "$archive_entry" = README.md || "$archive_entry" = */README.md ]]; then
+      has_readme=true
+      break
+    fi
+  done
+  test "$has_readme" = true
+done
 git diff --exit-code HEAD -- go.mod go.sum
-git status --short
+test -z "$(git status --porcelain)"
 ```
 
 Expected: snapshot exits 0; exactly four archives exist for Darwin/Linux on amd64/arm64; checksums exist; every archive contains README; `go.mod` and `go.sum` remain unchanged. Remove generated `dist/` only if Git reports it as ignored output; do not delete tracked files.
@@ -560,8 +586,10 @@ Expected: snapshot exits 0; exactly four archives exist for Darwin/Linux on amd6
 Run fresh-eyes again on any review fix, then stage exact paths and make one concise conventional commit. Finish with:
 
 ```bash
+set -euo pipefail
 git status --short --branch
 git log --oneline main..HEAD
+test -z "$(git status --porcelain)"
 ```
 
 Expected: a clean `fix/v2-module-path` worktree with only reviewed commits above `main`.
@@ -576,18 +604,24 @@ Expected: a clean `fix/v2-module-path` worktree with only reviewed commits above
 
 This procedure succeeded against clean commit `9fed8a2` without creating a project or origin tag. Run it again at the final reviewed HEAD because this documentation correction changes the release SHA.
 
-**Step 1: Prove a clean reviewed candidate in isolation**
+**Step 1: Prove and push one fixed reviewed SHA**
 
 ```bash
+set -euo pipefail
 test "$(git branch --show-current)" = fix/v2-module-path
 test -z "$(git status --porcelain)"
+test "$(git remote get-url --push origin)" = git@github.com:harperreed/crm.git
+git fetch origin --prune --tags
+if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
+remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
+test -z "$remote_tag_ref"
 release_sha=$(git rev-parse HEAD)
 candidate_root=$(mktemp -d)
-test -n "$candidate_root" || exit 1
-if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
+test -n "$candidate_root"
 git clone --bare . "$candidate_root/crm.git"
 git --git-dir="$candidate_root/crm.git" tag v2.3.0 "$release_sha"
-test "$(git --git-dir="$candidate_root/crm.git" rev-parse v2.3.0^{commit})" = "$release_sha"
+candidate_tag_sha=$(git --git-dir="$candidate_root/crm.git" rev-parse v2.3.0^{commit})
+test "$candidate_tag_sha" = "$release_sha"
 git config --file "$candidate_root/gitconfig" url."file://$candidate_root/crm.git".insteadOf https://github.com/harperreed/crm
 env -u GOROOT \
   GIT_CONFIG_GLOBAL="$candidate_root/gitconfig" \
@@ -599,38 +633,25 @@ env -u GOROOT \
   GOMODCACHE="$candidate_root/mod" \
   GOCACHE="$candidate_root/cache" \
   go install github.com/harperreed/crm/v2/cmd/crm@v2.3.0
-candidate_short_version=$("$candidate_root/bin/crm" --version) || exit 1
-candidate_long_version=$("$candidate_root/bin/crm" version) || exit 1
+candidate_short_version=$("$candidate_root/bin/crm" --version)
+candidate_long_version=$("$candidate_root/bin/crm" version)
+candidate_long_first_line=${candidate_long_version%%$'\n'*}
 test "$candidate_short_version" = "crm version 2.3.0"
-printf '%s\n' "$candidate_long_version" | rg '^crm version 2\.3\.0$'
+test "$candidate_long_first_line" = "crm version 2.3.0"
 test "$(git rev-parse HEAD)" = "$release_sha"
 if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
+remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
+test -z "$remote_tag_ref"
+git push origin "$release_sha:refs/heads/fix/v2-module-path"
+remote_feature_ref=$(git ls-remote --heads origin refs/heads/fix/v2-module-path)
+remote_feature_sha=${remote_feature_ref%%[[:space:]]*}
+test "$remote_feature_sha" = "$release_sha"
+test -z "$(git status --porcelain)"
 ```
 
-Expected: the branch is clean; `$release_sha` names its reviewed HEAD; `$candidate_root` is a new isolated directory; the bare clone's temporary tag points to the exact reviewed SHA; the isolated version-query install succeeds; and both commands report `2.3.0`. The project checkout remains at the reviewed SHA and has no `v2.3.0` tag.
+Expected: the clean feature branch, temporary candidate tag, installed binary, and authoritative remote feature ref all use one `$release_sha` assigned once. Both version commands report `2.3.0`, and neither the project repository nor origin gains `v2.3.0`.
 
 This replaces the direct exact-SHA version query. Before a valid `/v2` tag exists, that lookup loads deprecation metadata from the old `v2.2.0` `@latest` tag and fails because its `go.mod` declares the invalid unsuffixed module path. Do not create a candidate tag in the project repository or on origin.
-
-**Step 2: Push the reviewed branch**
-
-```bash
-test "$(git branch --show-current)" = fix/v2-module-path
-test -z "$(git status --porcelain)"
-release_sha=$(git rev-parse HEAD)
-git push -u origin fix/v2-module-path
-test "$(git rev-parse origin/fix/v2-module-path)" = "$release_sha"
-```
-
-Expected: the remote branch points to the exact candidate SHA proved in Step 1.
-
-**Step 3: Confirm the public release target remains unique**
-
-```bash
-if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
-test -z "$(git ls-remote --tags origin refs/tags/v2.3.0)"
-```
-
-Expected: both commands exit 0 because neither the project repository nor origin has `v2.3.0`. If either finds a tag, stop and inspect it; never retarget a published tag.
 
 ---
 
@@ -642,34 +663,51 @@ Expected: both commands exit 0 because neither the project repository nor origin
 - New immutable tag: `v2.3.0`
 - GitHub release and Homebrew formula generated by the existing release workflow
 
-**Step 1: Fast-forward main and create the lightweight tag**
+**Step 1: Bind, merge, tag, and publish the authoritative reviewed SHA**
 
 ```bash
-release_sha=$(git rev-parse fix/v2-module-path)
+set -euo pipefail
+test "$(git branch --show-current)" = fix/v2-module-path
+test -z "$(git status --porcelain)"
+test "$(git remote get-url --push origin)" = git@github.com:harperreed/crm.git
+git fetch origin --prune --tags
+if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
+remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
+test -z "$remote_tag_ref"
+remote_feature_ref=$(git ls-remote --heads origin refs/heads/fix/v2-module-path)
+release_sha=${remote_feature_ref%%[[:space:]]*}
+test -n "$release_sha"
+test "$(git rev-parse refs/heads/fix/v2-module-path)" = "$release_sha"
+remote_main_ref=$(git ls-remote --heads origin refs/heads/main)
+remote_main_sha=${remote_main_ref%%[[:space:]]*}
+test -n "$remote_main_sha"
+git merge-base --is-ancestor "$remote_main_sha" "$release_sha"
 git switch main
-git merge --ff-only fix/v2-module-path
+test "$(git branch --show-current)" = main
+test -z "$(git status --porcelain)"
+git merge --ff-only "$release_sha"
 test "$(git rev-parse HEAD)" = "$release_sha"
 git tag v2.3.0 "$release_sha"
 test "$(git cat-file -t v2.3.0)" = commit
-```
-
-Expected: `main` fast-forwards without a merge commit; `v2.3.0` is a lightweight tag at the exact reviewed SHA.
-
-**Step 2: Push main and the tag atomically**
-
-```bash
-release_sha=$(git rev-parse fix/v2-module-path)
-git push --atomic origin main refs/tags/v2.3.0
-test "$(git rev-parse origin/main)" = "$release_sha"
 test "$(git rev-parse v2.3.0^{commit})" = "$release_sha"
+git push --atomic origin "$release_sha:refs/heads/main" refs/tags/v2.3.0:refs/tags/v2.3.0
+remote_main_ref=$(git ls-remote --heads origin refs/heads/main)
+remote_main_sha=${remote_main_ref%%[[:space:]]*}
+remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
+remote_tag_sha=${remote_tag_ref%%[[:space:]]*}
+test "$remote_main_sha" = "$release_sha"
+test "$remote_tag_sha" = "$release_sha"
 ```
 
-Expected: both refs publish together and point to the reviewed SHA. Never use `--force`.
+Expected: the authoritative origin feature SHA equals the local reviewed branch, origin `main` is its ancestor, local `main` fast-forwards to that fixed SHA, and the lightweight tag points to it. The atomic explicit-SHA push publishes `main` and `v2.3.0` together, and authoritative remote queries confirm both refs. Never use `--force`.
 
-**Step 3: Monitor the tag-triggered release**
+**Step 2: Monitor the tag-triggered release**
 
 ```bash
-release_sha=$(git rev-parse v2.3.0^{commit})
+set -euo pipefail
+remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
+release_sha=${remote_tag_ref%%[[:space:]]*}
+test -n "$release_sha"
 release_run_id=
 for attempt in {1..10}; do
   release_run_id=$(gh run list --workflow Release --commit "$release_sha" --limit 1 --json databaseId --jq '.[0].databaseId')
@@ -681,7 +719,21 @@ release_head_sha=$(gh run view "$release_run_id" --json headSha --jq .headSha)
 test "$release_head_sha" = "$release_sha"
 gh run view "$release_run_id" --json databaseId,status,conclusion,headSha,url
 gh run watch "$release_run_id" --exit-status
-gh release view v2.3.0 --json tagName,targetCommitish,url,assets
+release_conclusion=$(gh run view "$release_run_id" --json conclusion --jq .conclusion)
+test "$release_conclusion" = success
+release_assets=$(gh release view v2.3.0 --json assets --jq '.assets[].name')
+release_asset_names=("${(@f)release_assets}")
+release_asset_count=${#release_asset_names[@]}
+test "$release_asset_count" -eq 5
+release_asset_lines=$'\n'"$release_assets"$'\n'
+for expected_asset in \
+  crm_2.3.0_darwin_amd64.tar.gz \
+  crm_2.3.0_darwin_arm64.tar.gz \
+  crm_2.3.0_linux_amd64.tar.gz \
+  crm_2.3.0_linux_arm64.tar.gz \
+  checksums.txt; do
+  [[ "$release_asset_lines" = *$'\n'"$expected_asset"$'\n'* ]]
+done
 ```
 
 Expected: the workflow concludes `success`; the release has four platform archives plus checksums and targets `v2.3.0`.
@@ -689,7 +741,10 @@ Expected: the workflow concludes `success`; the release has four platform archiv
 If the workflow fails, collect its logs with a self-contained lookup:
 
 ```bash
-release_sha=$(git rev-parse v2.3.0^{commit})
+set -euo pipefail
+remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
+release_sha=${remote_tag_ref%%[[:space:]]*}
+test -n "$release_sha"
 release_run_id=$(gh run list --workflow Release --commit "$release_sha" --limit 1 --json databaseId --jq '.[0].databaseId')
 test -n "$release_run_id"
 gh run view "$release_run_id" --log-failed
@@ -697,38 +752,63 @@ gh run view "$release_run_id" --log-failed
 
 Then apply `@systematic-debugging` and repair the workflow without moving `v2.3.0`.
 
-**Step 4: Verify the Homebrew formula**
+**Step 3: Verify the Homebrew formula**
 
 ```bash
-gh api repos/harperreed/homebrew-tap/contents/Formula/crm.rb --jq .content | base64 --decode | rg -n 'version "2\.3\.0"|v2\.3\.0|crm_2\.3\.0'
+set -euo pipefail
+formula=$(gh api repos/harperreed/homebrew-tap/contents/Formula/crm.rb --jq .content | base64 --decode)
+[[ "$formula" = *"https://github.com/harperreed/crm/releases/download/v2.3.0/"* ]]
+[[ "$formula" = *"crm_2.3.0_"* ]]
+for old_minor in 0 1 2; do
+  if [[ "$formula" = *"/releases/download/v2.${old_minor}."* ]]; then exit 1; fi
+done
 ```
 
-Expected: the published formula references only version 2.3.0 release artifacts. If the formula uses URL-derived versions and omits an explicit `version` line, the `v2.3.0` archive URL still must match.
+Expected: the published formula contains a v2.3.0 release URL and artifact name and contains no v2.0, v2.1, or v2.2 release URL. The formula may omit an explicit `version` line when Homebrew derives it from the URL.
 
-**Step 5: Verify the public tagged Go install**
+**Step 4: Verify the public tagged Go install**
 
 ```bash
+set -euo pipefail
 public_install_root=$(mktemp -d)
+test -n "$public_install_root"
 env -u GOROOT \
   GOPROXY=https://proxy.golang.org,direct \
   GOBIN="$public_install_root/bin" \
   GOMODCACHE="$public_install_root/mod" \
   GOCACHE="$public_install_root/cache" \
   go install github.com/harperreed/crm/v2/cmd/crm@v2.3.0
-"$public_install_root/bin/crm" --version
-"$public_install_root/bin/crm" version
+public_short_version=$("$public_install_root/bin/crm" --version)
+public_long_version=$("$public_install_root/bin/crm" version)
+public_long_first_line=${public_long_version%%$'\n'*}
+test "$public_short_version" = "crm version 2.3.0"
+test "$public_long_first_line" = "crm version 2.3.0"
 ```
 
-Expected: install succeeds from a clean module cache and both commands begin with `crm version 2.3.0`. Retry only for observed proxy propagation; do not weaken the check to `GOPROXY=direct` as the final public proof.
+Expected: install succeeds from a clean module cache, `--version` reports exactly `crm version 2.3.0`, and the detailed command's first line is the same. Retry only for observed proxy propagation; do not weaken the check to `GOPROXY=direct` as the final public proof.
 
-**Step 6: Record final evidence**
+**Step 5: Record final evidence**
 
 ```bash
-release_sha=$(git rev-parse v2.3.0^{commit})
-git status --short --branch
+set -euo pipefail
+test "$(git branch --show-current)" = main
+test -z "$(git status --porcelain)"
+test "$(git remote get-url --push origin)" = git@github.com:harperreed/crm.git
+git fetch origin --prune --tags
+remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
+release_sha=${remote_tag_ref%%[[:space:]]*}
+test -n "$release_sha"
+test "$(git rev-parse v2.3.0^{commit})" = "$release_sha"
 test "$(git rev-parse main)" = "$release_sha"
-test "$(git rev-parse origin/main)" = "$release_sha"
-gh release view v2.3.0 --json url,assets
+remote_main_ref=$(git ls-remote --heads origin refs/heads/main)
+remote_main_sha=${remote_main_ref%%[[:space:]]*}
+test "$remote_main_sha" = "$release_sha"
+release_assets=$(gh release view v2.3.0 --json assets --jq '.assets[].name')
+release_asset_names=("${(@f)release_assets}")
+release_asset_count=${#release_asset_names[@]}
+test "$release_asset_count" -eq 5
+release_url=$(gh release view v2.3.0 --json url --jq .url)
+test -n "$release_url"
 ```
 
 Expected: the worktree is clean; all three Git SHAs match `$release_sha`; the release URL and five expected release files are present. Report the canonical, vet, race, snapshot, isolated candidate-tag install, workflow, Homebrew, and public tagged-install results without claiming more than the commands proved.
