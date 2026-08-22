@@ -62,7 +62,7 @@ func TestRootVersionFlag(t *testing.T) {
 		t.Errorf("Execute() error = %v", err)
 	}
 
-	want := fmt.Sprintf("crm version %s\n", version)
+	want := fmt.Sprintf("crm version %s\n", rootCmd.Version)
 	if got := output.String(); got != want {
 		t.Errorf("output = %q, want %q", got, want)
 	}
