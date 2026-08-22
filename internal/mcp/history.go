@@ -18,8 +18,8 @@ func listHistoryTool() *mcp.Tool {
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"entity_id": {"type": "string", "description": "Entity UUID or prefix"},
-				"limit":     {"type": "integer", "description": "Maximum events (default 20, maximum 100)"}
+				"entity_id": {"type": "string", "minLength": 6, "description": "Entity UUID or prefix"},
+				"limit":     {"type": "integer", "maximum": 100, "description": "Maximum events (default 20, maximum 100)"}
 			},
 			"required": ["entity_id"]
 		}`),
@@ -33,7 +33,7 @@ func getHistoryEventTool() *mcp.Tool {
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"event_id": {"type": "string", "description": "History event UUID or prefix"}
+				"event_id": {"type": "string", "minLength": 6, "description": "History event UUID or prefix"}
 			},
 			"required": ["event_id"]
 		}`),

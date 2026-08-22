@@ -37,9 +37,6 @@ func (s *MarkdownStore) readCommittedHistoryEvents() ([]*history.Event, error) {
 	}
 	events := make([]*history.Event, 0, len(entries))
 	for _, entry := range entries {
-		if filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
 		path := filepath.Join(s.historyEventsDir(), entry.Name())
 		info, err := os.Lstat(path)
 		if err != nil {
@@ -47,6 +44,12 @@ func (s *MarkdownStore) readCommittedHistoryEvents() ([]*history.Event, error) {
 		}
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			return nil, fmt.Errorf("%w: %s: path is not a regular committed history event", ErrHistoryCorrupt, path)
+		}
+		if isMarkdownHistoryPublisherTemp(entry.Name()) {
+			continue
+		}
+		if filepath.Ext(entry.Name()) != ".json" {
+			return nil, fmt.Errorf("%w: unexpected entry in committed history directory: %s", ErrHistoryCorrupt, path)
 		}
 		data, err := readFileWithoutFollowingSymlinks(path)
 		if err != nil {
@@ -62,6 +65,19 @@ func (s *MarkdownStore) readCommittedHistoryEvents() ([]*history.Event, error) {
 		events = append(events, event)
 	}
 	return events, nil
+}
+
+func isMarkdownHistoryPublisherTemp(name string) bool {
+	withoutSuffix, ok := strings.CutSuffix(name, ".tmp")
+	if !ok || !strings.HasPrefix(withoutSuffix, ".") {
+		return false
+	}
+	body := strings.TrimPrefix(withoutSuffix, ".")
+	if len(body) <= 37 || body[36] != '-' {
+		return false
+	}
+	id, err := uuid.Parse(body[:36])
+	return err == nil && id != uuid.Nil && id.String() == body[:36] && body[37:] != ""
 }
 
 func decodeCommittedHistoryEvent(data []byte) (*history.Event, error) {

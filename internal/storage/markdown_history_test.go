@@ -263,11 +263,17 @@ func TestMarkdownWriteCommittedHistoryEventUsesPrivateMode(t *testing.T) {
 	assertNoMarkdownHistoryTempFiles(t, store)
 }
 
-func TestMarkdownHistoryReadsIgnoreTemporaryFiles(t *testing.T) {
+func TestMarkdownHistoryReadsIgnorePublisherTemporaryFiles(t *testing.T) {
 	store := newTestMarkdownStore(t)
-	path := filepath.Join(store.historyEventsDir(), ".interrupted-event.tmp")
-	if err := os.WriteFile(path, []byte(`{"partial":`), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
+	temporary, err := os.CreateTemp(store.historyEventsDir(), "."+testHistoryEventA.String()+"-*.tmp")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	if _, err := temporary.Write([]byte(`{"partial":`)); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := temporary.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 
 	got, err := store.ListHistory(testHistoryEntityA.String(), 0)
@@ -276,6 +282,48 @@ func TestMarkdownHistoryReadsIgnoreTemporaryFiles(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("ListHistory() len = %d, want 0", len(got))
+	}
+}
+
+func TestMarkdownCommittedHistoryRejectsUnexpectedEntries(t *testing.T) {
+	for _, variant := range []string{"visible-file", "unrecognized-temp", "directory", "symlink", "fifo"} {
+		t.Run(variant, func(t *testing.T) {
+			store := newTestMarkdownStore(t)
+			publisherTempName := "." + testHistoryEventA.String() + "-123456.tmp"
+			var path string
+			var err error
+			switch variant {
+			case "visible-file":
+				path = filepath.Join(store.historyEventsDir(), testHistoryEventA.String()+".json.renamed")
+				err = os.WriteFile(path, []byte("unexpected"), 0o600)
+			case "unrecognized-temp":
+				path = filepath.Join(store.historyEventsDir(), ".interrupted-event.tmp")
+				err = os.WriteFile(path, []byte("unexpected"), 0o600)
+			case "directory":
+				path = filepath.Join(store.historyEventsDir(), publisherTempName)
+				err = os.Mkdir(path, 0o700)
+			case "symlink":
+				target := filepath.Join(t.TempDir(), "target")
+				if err = os.WriteFile(target, []byte("unexpected"), 0o600); err == nil {
+					path = filepath.Join(store.historyEventsDir(), publisherTempName)
+					err = os.Symlink(target, path)
+				}
+			case "fifo":
+				path = filepath.Join(store.historyEventsDir(), publisherTempName)
+				err = syscall.Mkfifo(path, 0o600)
+			}
+			if err != nil {
+				t.Fatalf("create %s fixture: %v", variant, err)
+			}
+
+			_, err = store.ListHistory(testHistoryEntityA.String(), 0)
+			if !errors.Is(err, ErrHistoryCorrupt) {
+				t.Fatalf("ListHistory error = %v, want ErrHistoryCorrupt", err)
+			}
+			if !strings.Contains(err.Error(), path) {
+				t.Fatalf("ListHistory error = %q, want path %q", err, path)
+			}
+		})
 	}
 }
 

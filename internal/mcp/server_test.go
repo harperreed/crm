@@ -92,6 +92,44 @@ func TestServerListTools(t *testing.T) {
 	if len(result.Tools) != len(expectedTools) {
 		t.Errorf("expected %d tools, got %d", len(expectedTools), len(result.Tools))
 	}
+
+	if got := toolSchemaConstraint(t, result.Tools, "list_history", "entity_id", "minLength"); got != 6 {
+		t.Errorf("list_history entity_id minLength = %v, want 6", got)
+	}
+	if got := toolSchemaConstraint(t, result.Tools, "list_history", "limit", "maximum"); got != float64(history.MaxLimit) {
+		t.Errorf("list_history limit maximum = %v, want %d", got, history.MaxLimit)
+	}
+	if got := toolSchemaConstraint(t, result.Tools, "get_history_event", "event_id", "minLength"); got != 6 {
+		t.Errorf("get_history_event event_id minLength = %v, want 6", got)
+	}
+}
+
+func toolSchemaConstraint(t *testing.T, tools []*mcp.Tool, toolName, propertyName, constraint string) float64 {
+	t.Helper()
+	for _, tool := range tools {
+		if tool.Name != toolName {
+			continue
+		}
+		schema, ok := tool.InputSchema.(map[string]any)
+		if !ok {
+			t.Fatalf("%s input schema has type %T, want map[string]any", toolName, tool.InputSchema)
+		}
+		properties, ok := schema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s schema properties have type %T, want map[string]any", toolName, schema["properties"])
+		}
+		property, ok := properties[propertyName].(map[string]any)
+		if !ok {
+			t.Fatalf("%s schema property %s has type %T, want map[string]any", toolName, propertyName, properties[propertyName])
+		}
+		value, ok := property[constraint].(float64)
+		if !ok {
+			t.Fatalf("%s schema %s.%s has type %T, want number", toolName, propertyName, constraint, property[constraint])
+		}
+		return value
+	}
+	t.Fatalf("tool %s not found", toolName)
+	return 0
 }
 
 func TestServerAddAndGetContact(t *testing.T) {

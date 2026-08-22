@@ -388,7 +388,11 @@ func (s *Server) handleUpdateContact(_ context.Context, req *mcp.CallToolRequest
 	if err := s.store.UpdateContact(contact); err != nil {
 		return errResult(fmt.Sprintf("update contact: %v", err))
 	}
-	return jsonResult(contact)
+	persisted, err := s.store.GetContact(contact.ID)
+	if err != nil {
+		return errResult(fmt.Sprintf("get contact: %v", err))
+	}
+	return jsonResult(persisted)
 }
 
 func (s *Server) handleDeleteContact(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -529,7 +533,11 @@ func (s *Server) handleUpdateCompany(_ context.Context, req *mcp.CallToolRequest
 	if err := s.store.UpdateCompany(company); err != nil {
 		return errResult(fmt.Sprintf("update company: %v", err))
 	}
-	return jsonResult(company)
+	persisted, err := s.store.GetCompany(company.ID)
+	if err != nil {
+		return errResult(fmt.Sprintf("get company: %v", err))
+	}
+	return jsonResult(persisted)
 }
 
 func (s *Server) handleDeleteCompany(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
