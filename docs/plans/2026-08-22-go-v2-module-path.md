@@ -576,7 +576,7 @@ Expected: a clean `fix/v2-module-path` worktree with only reviewed commits above
 
 This procedure succeeded against clean commit `9fed8a2` without creating a project or origin tag. Run it again at the final reviewed HEAD because this documentation correction changes the release SHA.
 
-**Step 1: Require a clean reviewed candidate**
+**Step 1: Prove a clean reviewed candidate in isolation**
 
 ```bash
 test "$(git branch --show-current)" = fix/v2-module-path
@@ -585,13 +585,6 @@ release_sha=$(git rev-parse HEAD)
 candidate_root=$(mktemp -d)
 test -n "$candidate_root" || exit 1
 if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
-```
-
-Expected: the branch is clean, `$release_sha` names its reviewed HEAD, `$candidate_root` is a new isolated directory, and the project has no `v2.3.0` tag.
-
-**Step 2: Install a temporary candidate tag through `/v2`**
-
-```bash
 git clone --bare . "$candidate_root/crm.git"
 git --git-dir="$candidate_root/crm.git" tag v2.3.0 "$release_sha"
 test "$(git --git-dir="$candidate_root/crm.git" rev-parse v2.3.0^{commit})" = "$release_sha"
@@ -614,20 +607,23 @@ test "$(git rev-parse HEAD)" = "$release_sha"
 if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
 ```
 
-Expected: the bare clone's temporary tag points to the exact reviewed SHA, the isolated version-query install succeeds, and both commands report `2.3.0`. The project checkout remains at the reviewed SHA and has no `v2.3.0` tag.
+Expected: the branch is clean; `$release_sha` names its reviewed HEAD; `$candidate_root` is a new isolated directory; the bare clone's temporary tag points to the exact reviewed SHA; the isolated version-query install succeeds; and both commands report `2.3.0`. The project checkout remains at the reviewed SHA and has no `v2.3.0` tag.
 
 This replaces the direct exact-SHA version query. Before a valid `/v2` tag exists, that lookup loads deprecation metadata from the old `v2.2.0` `@latest` tag and fails because its `go.mod` declares the invalid unsuffixed module path. Do not create a candidate tag in the project repository or on origin.
 
-**Step 3: Push the reviewed branch**
+**Step 2: Push the reviewed branch**
 
 ```bash
+test "$(git branch --show-current)" = fix/v2-module-path
+test -z "$(git status --porcelain)"
+release_sha=$(git rev-parse HEAD)
 git push -u origin fix/v2-module-path
 test "$(git rev-parse origin/fix/v2-module-path)" = "$release_sha"
 ```
 
-Expected: the remote branch points to the exact candidate SHA proved in Step 2.
+Expected: the remote branch points to the exact candidate SHA proved in Step 1.
 
-**Step 4: Confirm the public release target remains unique**
+**Step 3: Confirm the public release target remains unique**
 
 ```bash
 if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
@@ -690,7 +686,16 @@ gh release view v2.3.0 --json tagName,targetCommitish,url,assets
 
 Expected: the workflow concludes `success`; the release has four platform archives plus checksums and targets `v2.3.0`.
 
-If the workflow fails, use `gh run view "$release_run_id" --log-failed`, apply `@systematic-debugging`, and repair the workflow without moving `v2.3.0`.
+If the workflow fails, collect its logs with a self-contained lookup:
+
+```bash
+release_sha=$(git rev-parse v2.3.0^{commit})
+release_run_id=$(gh run list --workflow Release --commit "$release_sha" --limit 1 --json databaseId --jq '.[0].databaseId')
+test -n "$release_run_id"
+gh run view "$release_run_id" --log-failed
+```
+
+Then apply `@systematic-debugging` and repair the workflow without moving `v2.3.0`.
 
 **Step 4: Verify the Homebrew formula**
 
@@ -721,7 +726,8 @@ Expected: install succeeds from a clean module cache and both commands begin wit
 ```bash
 release_sha=$(git rev-parse v2.3.0^{commit})
 git status --short --branch
-git rev-parse main origin/main v2.3.0^{commit}
+test "$(git rev-parse main)" = "$release_sha"
+test "$(git rev-parse origin/main)" = "$release_sha"
 gh release view v2.3.0 --json url,assets
 ```
 
