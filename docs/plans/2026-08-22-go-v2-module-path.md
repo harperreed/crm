@@ -803,6 +803,7 @@ set -euo pipefail
 public_install_root=$(mktemp -d)
 test -n "$public_install_root"
 env -u GOROOT -u GOPRIVATE -u GONOPROXY -u GONOSUMDB \
+  GOENV=off \
   GOPROXY=https://proxy.golang.org \
   GOSUMDB=sum.golang.org \
   GOBIN="$public_install_root/bin" \
@@ -816,7 +817,7 @@ test "$public_short_version" = "crm version 2.3.0"
 test "$public_long_first_line" = "crm version 2.3.0"
 ```
 
-Expected: install succeeds through the public Go proxy and checksum database with no direct or inherited private-module fallback; `--version` reports exactly `crm version 2.3.0`, and the detailed command's first line is the same. Retry only for observed proxy propagation; do not weaken the final public proof with `direct` or private-module overrides.
+Expected: install succeeds through the public Go proxy and checksum database with process and persisted private-module bypasses disabled and no direct or inherited private-module fallback; `--version` reports exactly `crm version 2.3.0`, and the detailed command's first line is the same. Retry only for observed proxy propagation; do not weaken the final public proof with `direct` or private-module overrides.
 
 **Step 5: Record final evidence**
 
