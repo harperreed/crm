@@ -11,6 +11,10 @@
 
 **Tech Stack:** Go 1.25.5, Cobra, `database/sql`, modernc SQLite, Markdown/YAML files, JSON snapshots, MCP Go SDK v1.4.1.
 
+**State:** Implementation, documentation audit, review, and final verification are complete. The branch is awaiting Doctor Biz's disposition choice.
+
+**Next step:** Choose whether to merge, open a pull request, keep the branch, or discard it.
+
 ## Global Constraints
 
 - Implement the approved design in `docs/superpowers/specs/2026-08-21-crm-history-design.md`; deviations require Doctor Biz's approval.
@@ -96,7 +100,7 @@
   - `func EqualSnapshots(entityType EntityType, left, right json.RawMessage) (bool, error)`.
   - `func ChangedFields(entityType EntityType, before, after json.RawMessage) ([]string, error)`.
 
-- [ ] **Step 1: Write failing event tests**
+- [x] **Step 1: Write failing event tests**
 
 Create table-driven tests that require exact enum validation, action-specific null snapshots, related-ID de-duplication, UTC timestamps, and limit behavior. Include these concrete cases:
 
@@ -130,7 +134,7 @@ func TestNormalizeLimit(t *testing.T) {
 
 `TestNewEventValidation` must cover create (`before=nil`), update (both present), delete (`after=nil`), invalid source, invalid entity type, missing subject in related IDs, invalid snapshot JSON, and zero timestamp.
 
-- [ ] **Step 2: Run event tests and verify RED**
+- [x] **Step 2: Run event tests and verify RED**
 
 Run:
 
@@ -140,7 +144,7 @@ env -u GOROOT go test ./internal/history -run 'TestNormalizeLimit|TestNewEventVa
 
 Expected: FAIL because `internal/history` and its exported types do not exist.
 
-- [ ] **Step 3: Implement event types and validation**
+- [x] **Step 3: Implement event types and validation**
 
 Use this exact public shape:
 
@@ -171,7 +175,7 @@ type Summary struct {
 
 `NewEvent` generates a UUID, sets schema version 1, canonicalizes related IDs by sorting and de-duplicating them, converts time to UTC, and calls `Validate` before returning.
 
-- [ ] **Step 4: Write failing snapshot tests**
+- [x] **Step 4: Write failing snapshot tests**
 
 Round-trip one fully populated instance of each current model. Assert the JSON contains snake-case keys and never contains `"ID"`, `"CreatedAt"`, or `"UpdatedAt"`. For contacts, require:
 
@@ -181,7 +185,7 @@ wantChanged := []string{"email", "fields", "phone", "tags"}
 
 after changing those four fields. Assert that changing only `updated_at` produces an empty changed-field list.
 
-- [ ] **Step 5: Run snapshot tests and verify RED**
+- [x] **Step 5: Run snapshot tests and verify RED**
 
 Run:
 
@@ -191,13 +195,13 @@ env -u GOROOT go test ./internal/history -run 'Snapshot|ChangedFields' -count=1 
 
 Expected: FAIL because the snapshot functions do not exist.
 
-- [ ] **Step 6: Implement stable version-1 snapshot DTOs**
+- [x] **Step 6: Implement stable version-1 snapshot DTOs**
 
 Use private DTO structs with explicit JSON tags and the exported conversion functions above. Preserve exact UUIDs and timestamps. `EqualSnapshots` decodes and re-encodes both sides through the entity-specific DTO, treats two null sides as equal, and compares the canonical JSON bytes. `ChangedFields` decodes JSON objects, removes `updated_at`, compares remaining top-level values with `reflect.DeepEqual`, sorts field names, and returns an error for invalid JSON or an unknown entity type.
 
 Do not add tags to `models.Contact`, `models.Company`, or `models.Relationship`.
 
-- [ ] **Step 7: Run Task 1 verification**
+- [x] **Step 7: Run Task 1 verification**
 
 Run:
 
@@ -209,7 +213,7 @@ git diff --check
 
 Expected: all commands exit 0. The pre-existing POC files are absent from the isolated worktree.
 
-- [ ] **Step 8: Commit Task 1**
+- [x] **Step 8: Commit Task 1**
 
 ```bash
 git status --short
@@ -256,7 +260,7 @@ NewMarkdownStore(dataDir string, source history.Source) (*MarkdownStore, error)
 func (c *Config) OpenStorage(source history.Source) (storage.Storage, error)
 ```
 
-- [ ] **Step 1: Write failing source-plumbing tests**
+- [x] **Step 1: Write failing source-plumbing tests**
 
 Add `TestHistorySourceForCommand` around a pure helper in `cmd/crm/root.go`:
 
@@ -271,7 +275,7 @@ func historySourceForCommand(cmd *cobra.Command) history.Source {
 
 Update config tests to call `cfg.OpenStorage(history.SourceCLI)` and assert the concrete stores retain that source from same-package storage tests.
 
-- [ ] **Step 2: Run source tests and verify RED**
+- [x] **Step 2: Run source tests and verify RED**
 
 ```bash
 env -u GOROOT go test ./cmd/crm ./internal/config ./internal/storage -run 'HistorySource|OpenStorage' -count=1 -v
@@ -279,13 +283,13 @@ env -u GOROOT go test ./cmd/crm ./internal/config ./internal/storage -run 'Histo
 
 Expected: FAIL because constructors and `OpenStorage` do not accept a source.
 
-- [ ] **Step 3: Add source fields and update every tracked call site**
+- [x] **Step 3: Add source fields and update every tracked call site**
 
 Add `source history.Source` and `now func() time.Time` to both stores. Constructors validate `source`, set `now: time.Now`, and keep all existing initialization. `root.go` passes `historySourceForCommand(cmd)` to `cfg.OpenStorage`.
 
 Use `history.SourceCLI` in existing storage/config/integration tests and `history.SourceMCP` in MCP tests. Do not modify Doctor Biz's uncommitted POC files.
 
-- [ ] **Step 4: Write failing schema and history-query tests**
+- [x] **Step 4: Write failing schema and history-query tests**
 
 SQLite tests must assert both tables and these indexes exist:
 
@@ -307,7 +311,7 @@ Write committed fixture events through unexported backend helpers, then require:
 
 Run the same read cases against Markdown fixture event files.
 
-- [ ] **Step 5: Run query tests and verify RED**
+- [x] **Step 5: Run query tests and verify RED**
 
 ```bash
 env -u GOROOT go test ./internal/storage -run 'HistorySchema|ListHistory|GetHistoryEvent' -count=1 -v
@@ -315,7 +319,7 @@ env -u GOROOT go test ./internal/storage -run 'HistorySchema|ListHistory|GetHist
 
 Expected: FAIL because schema, files, and query methods do not exist.
 
-- [ ] **Step 6: Extend the storage contract and errors**
+- [x] **Step 6: Extend the storage contract and errors**
 
 Add the two read methods to `Storage` and these sentinels:
 
@@ -327,7 +331,7 @@ ErrHistoryCorrupt   = errors.New("history event is corrupt")
 
 Reuse `ErrPrefixTooShort` and `ErrAmbiguousPrefix`.
 
-- [ ] **Step 7: Implement SQLite history schema and reads**
+- [x] **Step 7: Implement SQLite history schema and reads**
 
 Add the two tables from the design with a foreign key from `history_event_entities.event_id` to `history_events.id`. Keep related IDs normalized; do not duplicate them as JSON in the event table.
 
@@ -347,7 +351,7 @@ func (s *SqliteStore) resolveHistoryEventID(prefix string) (uuid.UUID, error)
 
 For a full entity UUID, `ListHistory` queries it directly and returns an empty slice when no event matches. For a prefix, resolve exactly one related entity ID; no match also returns an empty slice. Query ordered events with the normalized limit, load related IDs, and return summaries. `GetHistoryEvent` resolves the event and returns the full snapshots; no match returns `ErrHistoryNotFound`.
 
-- [ ] **Step 8: Implement Markdown history directories and reads**
+- [x] **Step 8: Implement Markdown history directories and reads**
 
 Create `_history/events` and `_history/pending` with the existing directory permission convention. Implement:
 
@@ -362,7 +366,7 @@ Read every `.json` file strictly. Validate each event and wrap malformed JSON or
 
 Constructor startup recovery is added in Task 4; at this task there are no pending files created by product mutations.
 
-- [ ] **Step 9: Run Task 2 verification**
+- [x] **Step 9: Run Task 2 verification**
 
 ```bash
 env -u GOROOT go test ./cmd/crm ./internal/config ./internal/storage -count=1
@@ -372,7 +376,7 @@ git diff --check
 
 Expected: all exit 0.
 
-- [ ] **Step 10: Commit Task 2**
+- [x] **Step 10: Commit Task 2**
 
 Stage only the files listed in Task 2 after inspecting `git status`, then:
 
@@ -405,7 +409,7 @@ func applySQLiteHistoryEvent(tx *sql.Tx, event *history.Event) error
 func currentSQLiteSnapshot(tx *sql.Tx, event *history.Event) (json.RawMessage, error)
 ```
 
-- [ ] **Step 1: Write failing mutation-history tests**
+- [x] **Step 1: Write failing mutation-history tests**
 
 For every entity type, exercise create, meaningful update where supported, and delete. Assert exact before/after snapshots, source, related IDs, and actions. Relationship create/delete must appear under the relationship, source, and target timelines.
 
@@ -425,7 +429,7 @@ if len(events) != 1 { // create only
 
 Fetch the contact again and assert its stored `updated_at` still equals the pre-update value.
 
-- [ ] **Step 2: Run SQLite mutation tests and verify RED**
+- [x] **Step 2: Run SQLite mutation tests and verify RED**
 
 ```bash
 env -u GOROOT go test ./internal/storage -run 'TestSqliteHistoryMutation|TestSqliteHistoryNoOp' -count=1 -v
@@ -433,7 +437,7 @@ env -u GOROOT go test ./internal/storage -run 'TestSqliteHistoryMutation|TestSql
 
 Expected: FAIL because current CRUD writes no events.
 
-- [ ] **Step 3: Centralize SQLite event application**
+- [x] **Step 3: Centralize SQLite event application**
 
 `commitHistoryEvent` must:
 
@@ -446,7 +450,7 @@ Expected: FAIL because current CRUD writes no events.
 
 `applySQLiteHistoryEvent` decodes the canonical DTO and uses parameterized INSERT, UPDATE, or DELETE statements. It returns existing entity-specific not-found errors where applicable. Do not construct SQL from event data.
 
-- [ ] **Step 4: Route all SQLite mutations through events**
+- [x] **Step 4: Route all SQLite mutations through events**
 
 Each public mutation performs only preparation and delegation:
 
@@ -472,7 +476,7 @@ func (s *SqliteStore) UpdateContact(contact *models.Contact) error {
 
 Implement create/delete contact, create/update/delete company, and create/delete relationship with their exact entity type, action, snapshot function, and related IDs. Add an internal relationship lookup for delete preparation; do not add a public CRUD method.
 
-- [ ] **Step 5: Write failing rollback tests**
+- [x] **Step 5: Write failing rollback tests**
 
 Create a real SQLite trigger that rejects history inserts:
 
@@ -486,7 +490,7 @@ END;
 
 Assert a contact create leaves no contact, an update preserves the old state, and a delete preserves the current state. Assert no event rows commit.
 
-- [ ] **Step 6: Run rollback tests and verify GREEN after transaction implementation**
+- [x] **Step 6: Run rollback tests and verify GREEN after transaction implementation**
 
 ```bash
 env -u GOROOT go test ./internal/storage -run 'TestSqliteHistoryRollback' -count=1 -v
@@ -495,7 +499,7 @@ env -u GOROOT go test ./internal/storage -count=1
 
 Expected: all tests pass and no new lint warnings appear.
 
-- [ ] **Step 7: Commit Task 3**
+- [x] **Step 7: Commit Task 3**
 
 ```bash
 git status --short
@@ -530,11 +534,11 @@ func (s *MarkdownStore) applyHistoryEvent(event *history.Event) error
 func (s *MarkdownStore) finalizePendingHistory(event *history.Event) error
 ```
 
-- [ ] **Step 1: Write failing Markdown mutation tests**
+- [x] **Step 1: Write failing Markdown mutation tests**
 
 Repeat the Task 3 event assertions against `MarkdownStore`: all create/update/delete events, semantic no-op, relationship aggregation, source, and exact snapshots. Also assert `_relationships.yaml` remains valid after each link/unlink.
 
-- [ ] **Step 2: Run Markdown mutation tests and verify RED**
+- [x] **Step 2: Run Markdown mutation tests and verify RED**
 
 ```bash
 env -u GOROOT go test ./internal/storage -run 'TestMarkdownHistoryMutation|TestMarkdownHistoryNoOp' -count=1 -v
@@ -542,7 +546,7 @@ env -u GOROOT go test ./internal/storage -run 'TestMarkdownHistoryMutation|TestM
 
 Expected: FAIL because Markdown CRUD writes no pending or committed events.
 
-- [ ] **Step 3: Implement the pending-event protocol**
+- [x] **Step 3: Implement the pending-event protocol**
 
 Add `mu sync.Mutex` to `MarkdownStore`. Public mutations lock once, prepare the exact event, and call `commitHistoryEvent`. That function must atomically write indented JSON to `_history/pending/<event-id>.json`, apply the event idempotently, and rename it to `_history/events/<event-id>.json`.
 
@@ -550,17 +554,17 @@ If the final event already exists, compare the validated event contents. Remove 
 
 Use private current-state helpers so recovery never calls public CRUD and never creates a second event.
 
-- [ ] **Step 4: Make Markdown relationship writes atomic**
+- [x] **Step 4: Make Markdown relationship writes atomic**
 
 Replace direct `mdstore.WriteYAML` use with YAML marshaling plus `mdstore.AtomicWrite` to the trusted `_relationships.yaml` path. Preserve the existing on-disk YAML shape.
 
-- [ ] **Step 5: Route all Markdown mutations through events**
+- [x] **Step 5: Route all Markdown mutations through events**
 
 Use the same event preparation rules as SQLite. `applyHistoryEvent` decodes the after snapshot for create/update, writes the exact state, and removes current state for delete. For relationship changes, replace or remove only the matching relationship ID while preserving unrelated entries.
 
 Strict recovery lookups must return parse errors from current entity files. Do not use the existing list behavior that skips malformed Markdown files.
 
-- [ ] **Step 6: Write failing recovery tests**
+- [x] **Step 6: Write failing recovery tests**
 
 Create real pending event files for these cases:
 
@@ -572,13 +576,13 @@ Create real pending event files for these cases:
 - malformed pending JSON: constructor returns `ErrHistoryCorrupt`;
 - malformed committed JSON: history read returns `ErrHistoryCorrupt`.
 
-- [ ] **Step 7: Implement startup recovery**
+- [x] **Step 7: Implement startup recovery**
 
 After current directories and `_history` directories exist, `NewMarkdownStore` calls `recoverPendingHistory` before returning. Sort pending filenames for deterministic recovery. For each event, compare current state with `history.EqualSnapshots`.
 
 Never overwrite a state that matches neither side of the event.
 
-- [ ] **Step 8: Run Task 4 verification**
+- [x] **Step 8: Run Task 4 verification**
 
 ```bash
 env -u GOROOT go test ./internal/storage -run 'TestMarkdownHistory|TestMarkdownRecovery' -count=1 -v
@@ -588,7 +592,7 @@ git diff --check
 
 Expected: all pass.
 
-- [ ] **Step 9: Commit Task 4**
+- [x] **Step 9: Commit Task 4**
 
 ```bash
 git status --short
@@ -612,7 +616,7 @@ Do not bypass hooks.
 - Consumes the complete storage history contract.
 - Produces a reusable scenario that both backends must pass unchanged.
 
-- [ ] **Step 1: Write the cross-backend scenario test**
+- [x] **Step 1: Write the cross-backend scenario test**
 
 Use a factory table for SQLite and Markdown stores, both with `history.SourceCLI`. Run this sequence with fixed entity UUIDs and explicit timestamps:
 
@@ -625,7 +629,7 @@ Use a factory table for SQLite and Markdown stores, both with `history.SourceCLI
 
 Assert contact and company timelines each contain their own mutations plus both relationship events. Assert relationship history survives unlink. Fetch every event by six-character prefix and verify before/after states.
 
-- [ ] **Step 2: Run parity test and verify failures are backend-specific**
+- [x] **Step 2: Run parity test and verify failures are backend-specific**
 
 ```bash
 env -u GOROOT go test ./test -run 'TestHistoryParity' -count=1 -v
@@ -633,7 +637,7 @@ env -u GOROOT go test ./test -run 'TestHistoryParity' -count=1 -v
 
 Expected before fixes: any failure names the backend and mismatched event. Fix the smallest backend defect, then rerun until PASS.
 
-- [ ] **Step 3: Write legacy-data migration tests**
+- [x] **Step 3: Write legacy-data migration tests**
 
 For SQLite, create an old-format database with current tables and one contact but no history tables, then open `NewSqliteStore`. For Markdown, write one existing contact frontmatter file before opening `NewMarkdownStore`.
 
@@ -644,7 +648,7 @@ Assert:
 - the first meaningful update creates one update event whose `before` is the seeded record;
 - no create event is fabricated.
 
-- [ ] **Step 4: Run integration verification**
+- [x] **Step 4: Run integration verification**
 
 ```bash
 env -u GOROOT go test ./test -run 'TestHistoryParity|TestHistoryLegacyData' -count=1 -v
@@ -653,7 +657,7 @@ env -u GOROOT go test ./... -count=1
 
 Expected: PASS for both backends.
 
-- [ ] **Step 5: Commit Task 5**
+- [x] **Step 5: Commit Task 5**
 
 ```bash
 git status --short
@@ -683,7 +687,7 @@ crm history <entity-id-or-prefix> [--limit 20]
 crm history show <event-id-or-prefix>
 ```
 
-- [ ] **Step 1: Write failing command tests**
+- [x] **Step 1: Write failing command tests**
 
 With a real temporary store, require timeline output to contain UTC RFC3339 timestamps, uppercase action, entity type, `[cli]`, an eight-character event prefix, and sorted changed fields. Require `history show` to contain event metadata plus `Before:` and `After:` pretty JSON blocks.
 
@@ -693,7 +697,7 @@ Test zero events prints exactly:
 No history found.
 ```
 
-- [ ] **Step 2: Run command tests and verify RED**
+- [x] **Step 2: Run command tests and verify RED**
 
 ```bash
 env -u GOROOT go test ./cmd/crm -run 'TestHistory' -count=1 -v
@@ -701,7 +705,7 @@ env -u GOROOT go test ./cmd/crm -run 'TestHistory' -count=1 -v
 
 Expected: FAIL because the command is not registered.
 
-- [ ] **Step 3: Implement the Cobra commands**
+- [x] **Step 3: Implement the Cobra commands**
 
 Register `historyCmd` on the root and `historyShowCmd` beneath it. Use `history.NormalizeLimit`; do not duplicate limit rules. Resolve identifiers only through storage history methods.
 
@@ -714,13 +718,13 @@ func formatHistoryEvent(event *history.Event) (string, error)
 
 The timeline sorts changed fields before joining them. Full snapshots use `json.Indent`; null sides print `null`.
 
-- [ ] **Step 4: Write the built-binary end-to-end test**
+- [x] **Step 4: Write the built-binary end-to-end test**
 
 Build `./cmd/crm` once into `t.TempDir()`. For each backend, create temporary `XDG_CONFIG_HOME` and `XDG_DATA_HOME`, write a real config JSON, then invoke the binary to add, edit, link, unlink, delete, list history, and show one event. Parse UUIDs from command output; do not inject model data directly.
 
 Assert history works after deletion and every CLI event source is `cli`.
 
-- [ ] **Step 5: Run CLI verification**
+- [x] **Step 5: Run CLI verification**
 
 ```bash
 env -u GOROOT go test ./cmd/crm ./test -run 'TestHistory|TestCLIHistory' -count=1 -v
@@ -728,7 +732,7 @@ env -u GOROOT go test ./cmd/crm ./test -run 'TestHistory|TestCLIHistory' -count=
 
 Expected: PASS for SQLite and Markdown.
 
-- [ ] **Step 6: Commit Task 6**
+- [x] **Step 6: Commit Task 6**
 
 ```bash
 git status --short
@@ -754,7 +758,7 @@ Do not bypass hooks.
   - `list_history` with required `entity_id` and optional integer `limit`.
   - `get_history_event` with required `event_id`.
 
-- [ ] **Step 1: Write failing tool-list and transport tests**
+- [x] **Step 1: Write failing tool-list and transport tests**
 
 Update the tool-list expectation from 12 to 14 and require both names.
 
@@ -777,7 +781,7 @@ defer clientSession.Close()
 
 Call `add_contact`, `update_contact`, `list_history`, and `get_history_event` through `ClientSession.CallTool`. Use a real SQLite store opened with `history.SourceMCP`. Assert returned events use source `mcp` and carry exact snapshots.
 
-- [ ] **Step 2: Run MCP tests and verify RED**
+- [x] **Step 2: Run MCP tests and verify RED**
 
 ```bash
 env -u GOROOT go test ./internal/mcp -run 'TestServerListTools|TestHistoryToolsTransport' -count=1 -v
@@ -785,13 +789,13 @@ env -u GOROOT go test ./internal/mcp -run 'TestServerListTools|TestHistoryToolsT
 
 Expected: FAIL because the tools are absent and the count is 12.
 
-- [ ] **Step 3: Implement definitions and handlers**
+- [x] **Step 3: Implement definitions and handlers**
 
 Use the existing raw JSON schema and `errResult`/`jsonResult` conventions. `list_history` normalizes the limit through storage/history behavior and returns summaries. `get_history_event` returns the full event. Empty identifiers return MCP error results before storage calls.
 
 Register both tools after the existing 12 tools and update the ABOUTME/count comment to 14.
 
-- [ ] **Step 4: Run MCP verification**
+- [x] **Step 4: Run MCP verification**
 
 ```bash
 env -u GOROOT go test ./internal/mcp -count=1 -v
@@ -800,7 +804,7 @@ env -u GOROOT go test -race ./internal/mcp -count=1
 
 Expected: PASS with a clean race run.
 
-- [ ] **Step 5: Commit Task 7**
+- [x] **Step 5: Commit Task 7**
 
 ```bash
 git status --short
@@ -825,7 +829,7 @@ Do not bypass hooks.
 
 - Documents the exact CLI commands, 14 MCP tools, future-only history, indefinite retention, CLI/MCP source, relationship aggregation, and deletion retention.
 
-- [ ] **Step 1: Verify live help before writing prose**
+- [x] **Step 1: Verify live help before writing prose**
 
 ```bash
 env -u GOROOT go run ./cmd/crm history --help
@@ -834,7 +838,7 @@ env -u GOROOT go run ./cmd/crm history show --help
 
 Expected: both exit 0 and match Task 6 flags and arguments.
 
-- [ ] **Step 2: Update README usage and MCP sections**
+- [x] **Step 2: Update README usage and MCP sections**
 
 Add two copyable examples:
 
@@ -845,11 +849,11 @@ crm history show <event-id-or-prefix>
 
 State that contact/company timelines include relationship changes, history begins after upgrade, and deletes retain snapshots. Change the MCP count from 12 to 14 and name both history tools.
 
-- [ ] **Step 3: Update contributor guidance and bundled skill**
+- [x] **Step 3: Update contributor guidance and bundled skill**
 
 Add storage layout and recovery facts to `CLAUDE.md`. Add durable gotchas for immutable PII retention and Markdown's single-process writer boundary. Teach the bundled skill when to call `list_history` and `get_history_event`; do not claim restore or purge exists.
 
-- [ ] **Step 4: Audit prose against code**
+- [x] **Step 4: Audit prose against code**
 
 ```bash
 rg -n '12 tools|restore|undo|purge|history' README.md CLAUDE.md gotchas.md cmd/crm/skill/SKILL.md
@@ -858,7 +862,7 @@ git diff --check
 
 Expected: no stale 12-tool claim; restore/undo/purge appear only as explicit non-features if mentioned.
 
-- [ ] **Step 5: Commit Task 8**
+- [x] **Step 5: Commit Task 8**
 
 ```bash
 git status --short
@@ -877,7 +881,7 @@ Do not bypass hooks.
 - Verify all changed files.
 - Modify only the smallest in-scope file if a check exposes a defect.
 
-- [ ] **Step 1: Run canonical checks**
+- [x] **Step 1: Run canonical checks**
 
 ```bash
 env -u GOROOT make check
@@ -887,7 +891,7 @@ env -u GOROOT go test -race ./...
 
 Expected: all exit 0 with no new warnings or errors.
 
-- [ ] **Step 2: Run focused history tests uncached**
+- [x] **Step 2: Run focused history tests uncached**
 
 ```bash
 env -u GOROOT go test ./internal/history ./internal/storage ./internal/mcp ./cmd/crm ./test -count=1 -v
@@ -895,11 +899,11 @@ env -u GOROOT go test ./internal/history ./internal/storage ./internal/mcp ./cmd
 
 Expected: all history unit, backend, integration, CLI E2E, and MCP transport tests pass.
 
-- [ ] **Step 3: Verify real CLI behavior for both backends**
+- [x] **Step 3: Verify real CLI behavior for both backends**
 
 Use temporary XDG directories and real commands to create, edit, link, unlink, delete, list history, and inspect an event. Confirm sources, relationship aggregation, and deleted-state inspection. Save command output to a temporary log and remove it afterward.
 
-- [ ] **Step 4: Verify release behavior**
+- [x] **Step 4: Verify release behavior**
 
 ```bash
 goreleaser check
@@ -908,11 +912,11 @@ env -u GOROOT goreleaser release --snapshot --clean
 
 Expected: `goreleaser check` exits 2 only for the documented deprecated `brews` field. Snapshot release exits 0, archives contain README, and `go.mod`/`go.sum` hashes remain unchanged. Remove generated `crm` and `dist/` afterward.
 
-- [ ] **Step 5: Run mandatory review gates**
+- [x] **Step 5: Run mandatory review gates**
 
 Invoke `superpowers:requesting-code-review` for the cumulative diff, fix every critical or important finding, and rerun affected tests. Invoke `fresh-eyes-review` after fixes. Finally invoke `superpowers:verification-before-completion` and repeat Steps 1–4 at the final commit.
 
-- [ ] **Step 6: Verify repository hygiene**
+- [x] **Step 6: Verify repository hygiene**
 
 ```bash
 git diff --check
