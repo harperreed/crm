@@ -653,7 +653,7 @@ test "$(git rev-parse HEAD)" = "$release_sha"
 if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
 remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
 test -z "$remote_tag_ref"
-git push origin "$release_sha:refs/heads/fix/v2-module-path"
+git push origin "${release_sha}:refs/heads/fix/v2-module-path"
 remote_feature_ref=$(git ls-remote --heads origin refs/heads/fix/v2-module-path)
 remote_feature_sha=${remote_feature_ref%%[[:space:]]*}
 test "$remote_feature_sha" = "$release_sha"
@@ -704,7 +704,7 @@ test "$(git rev-parse HEAD)" = "$release_sha"
 git tag v2.3.0 "$release_sha"
 test "$(git cat-file -t v2.3.0)" = commit
 test "$(git rev-parse v2.3.0^{commit})" = "$release_sha"
-git push --atomic origin "$release_sha:refs/heads/main" refs/tags/v2.3.0:refs/tags/v2.3.0
+git push --atomic origin "${release_sha}:refs/heads/main" refs/tags/v2.3.0:refs/tags/v2.3.0
 remote_main_ref=$(git ls-remote --heads origin refs/heads/main)
 remote_main_sha=${remote_main_ref%%[[:space:]]*}
 remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
