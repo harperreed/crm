@@ -11,9 +11,9 @@ Make the published v2 module installable with the Go toolchain. After release, t
 go install github.com/harperreed/crm/v2/cmd/crm@v2.3.0
 ```
 
-The migration changes module identity and first-party import paths only. It does not change CRM runtime behavior, storage formats, CLI commands, MCP contracts, or release artifacts.
+The migration changes module identity, first-party import paths, and source-install version reporting. It does not change storage formats, CLI commands, MCP contracts, or release artifacts.
 
-Estimated implementation size: 60–100 changed lines across roughly 50 source and current-documentation files, plus one focused regression test.
+Estimated implementation size: 90–130 changed lines across roughly 50 source and current-documentation files, plus focused module-path, documentation, and version-resolution tests.
 
 ## Current fault
 
@@ -45,13 +45,15 @@ Change the `module` directive in `go.mod` and every current Go source or test im
 
 Run `go mod tidy` after the path change. It must not add dependencies or change dependency versions. Formatting and import grouping must continue to come from the project's canonical tools.
 
+Keep the linker-injected version used by GoReleaser as the first choice for version output. When that value remains `dev`, read the version embedded by the Go toolchain, reject empty or `(devel)` values, and remove the leading `v` from a valid module version. This makes `go install ...@v2.3.0` report `2.3.0` while local developer builds continue to report `dev`.
+
 Historical design, plan, and audit documents remain unchanged when they describe the old path or old failure. They are records of the state at the time. Current guidance in `README.md`, `CLAUDE.md`, and `gotchas.md` must describe the new path.
 
 ## Regression protection
 
-Add a focused integration test that reads the repository's `go.mod` and requires the exact module directive `github.com/harperreed/crm/v2`. The normal package build then verifies that all first-party imports agree with that identity.
+Add a focused integration test that reads the repository's `go.mod` and requires the exact module directive `github.com/harperreed/crm/v2`. The normal package build then verifies that all first-party imports agree with that identity. Add a README regression check for the exact versioned install command, plus unit tests for linker-version precedence, embedded module-version normalization, and local-build fallback.
 
-The test must fail against `v2.2.0` for the missing `/v2` suffix before any production or documentation change is made. It must use real files and the Go test runner, with no mocks.
+Each regression test must fail for its intended reason before its production or documentation change is made. Tests must use real values or files and the Go test runner, with no mocks.
 
 The canonical `make check`, `go vet ./...`, and `go test -race ./...` gates remain required. A GoReleaser snapshot must build all configured targets, include `README.md`, and leave `go.mod` and `go.sum` unchanged.
 
@@ -99,6 +101,7 @@ If the remote commit install fails, stop before merging or tagging. If the relea
 
 - `go.mod` declares `module github.com/harperreed/crm/v2`.
 - All current first-party Go imports use `github.com/harperreed/crm/v2/`.
+- GoReleaser linker values take precedence, tagged `go install` builds use their embedded module version without the leading `v`, and local builds still report `dev`.
 - Historical documents remain historically accurate; current guidance contains no stale unversioned module or install path.
 - The regression test fails before the migration and passes afterward.
 - Canonical, vet, race, and snapshot-release gates pass with clean output except the accepted `brews` deprecation from `goreleaser check`.
