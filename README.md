@@ -66,7 +66,7 @@ crm history show <event-id-or-prefix>
 
 History starts with changes made after upgrading; CRM does not create baseline events for existing records. Events are immutable and kept indefinitely. Deleting a contact, company, or relationship removes the current record but keeps its historical snapshots, including any personal data they contain.
 
-Run `crm help`, `crm contact --help`, or `crm company --help` for the full command reference.
+Run `crm help` to browse commands. Add `--help` to the exact command you plan to run, such as `crm contact add --help`, for its full flags and usage.
 
 ## Configure storage
 
