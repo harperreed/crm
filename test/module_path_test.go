@@ -28,3 +28,21 @@ func TestModulePathMatchesMajorVersion(t *testing.T) {
 
 	t.Fatal("go.mod has no module directive")
 }
+
+func TestReadmeUsesVersionedGoInstallPath(t *testing.T) {
+	contents, err := os.ReadFile(filepath.Join("..", "README.md"))
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+
+	readme := string(contents)
+	const want = "go install github.com/harperreed/crm/v2/cmd/crm@latest"
+	if !strings.Contains(readme, want) {
+		t.Fatalf("README.md does not contain %q", want)
+	}
+
+	const stale = "go install github.com/harperreed/crm/cmd/crm@"
+	if strings.Contains(readme, stale) {
+		t.Fatalf("README.md contains stale install path %q", stale)
+	}
+}

@@ -16,12 +16,18 @@ brew install harperreed/tap/crm
 With Go 1.25.5 or newer:
 
 ```bash
+go install github.com/harperreed/crm/v2/cmd/crm@latest
+```
+
+For a development checkout:
+
+```bash
 git clone https://github.com/harperreed/crm.git
 cd crm
 make install
 ```
 
-Source installs do not use GoReleaser's linker flags, so `crm --version` reports `dev`.
+Tagged `go install` builds and GoReleaser builds report their release version. Local checkout builds report `dev`.
 
 Check the installed build with either public version entry point:
 

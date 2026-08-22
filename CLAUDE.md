@@ -51,7 +51,7 @@ The snapshot command replaces `dist/` with generated release archives, checksums
 ## Conventions
 
 - Hand-written Go files start with two `// ABOUTME:` lines.
-- The module path is `github.com/harperreed/crm`; the binary name is `crm`.
+- The module path is `github.com/harperreed/crm/v2`; the binary name is `crm`.
 - SQLite is the default backend and uses `modernc.org/sqlite`.
 - The default database is `$XDG_DATA_HOME/crm/crm.db` when set, otherwise `~/.local/share/crm/crm.db`.
 - `internal/config` and `internal/storage` handle XDG paths directly.
