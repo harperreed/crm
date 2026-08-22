@@ -11,7 +11,7 @@ import (
 	"strconv"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/crm/internal/history"
+	"github.com/harperreed/crm/v2/internal/history"
 )
 
 const sqliteHistoryColumns = `

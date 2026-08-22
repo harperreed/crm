@@ -6,9 +6,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/harperreed/crm/internal/config"
-	"github.com/harperreed/crm/internal/history"
-	"github.com/harperreed/crm/internal/storage"
+	"github.com/harperreed/crm/v2/internal/config"
+	"github.com/harperreed/crm/v2/internal/history"
+	"github.com/harperreed/crm/v2/internal/storage"
 	"github.com/spf13/cobra"
 )
 

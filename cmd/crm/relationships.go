@@ -8,7 +8,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/google/uuid"
-	"github.com/harperreed/crm/internal/models"
+	"github.com/harperreed/crm/v2/internal/models"
 	"github.com/spf13/cobra"
 )
 

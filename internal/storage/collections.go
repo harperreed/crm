@@ -2,7 +2,7 @@
 // ABOUTME: Keeps contact and company Fields and Tags non-nil across backends.
 package storage
 
-import "github.com/harperreed/crm/internal/models"
+import "github.com/harperreed/crm/v2/internal/models"
 
 func canonicalContact(contact *models.Contact) *models.Contact {
 	candidate := *contact

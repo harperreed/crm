@@ -5,7 +5,7 @@ package storage
 import (
 	"testing"
 
-	"github.com/harperreed/crm/internal/models"
+	"github.com/harperreed/crm/v2/internal/models"
 )
 
 func TestSearch(t *testing.T) {

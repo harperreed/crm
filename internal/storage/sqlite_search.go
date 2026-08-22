@@ -5,7 +5,7 @@ package storage
 import (
 	"fmt"
 
-	"github.com/harperreed/crm/internal/models"
+	"github.com/harperreed/crm/v2/internal/models"
 )
 
 // Search queries both contacts and companies using FTS5 and returns combined results.

@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/crm/internal/history"
-	"github.com/harperreed/crm/internal/models"
+	"github.com/harperreed/crm/v2/internal/history"
+	"github.com/harperreed/crm/v2/internal/models"
 )
 
 type historyReadBackend struct {

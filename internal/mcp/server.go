@@ -7,7 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/harperreed/crm/internal/storage"
+	"github.com/harperreed/crm/v2/internal/storage"
 )
 
 // Server wraps an MCP server with a CRM storage backend.

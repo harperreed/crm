@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/harperreed/crm/internal/history"
+	"github.com/harperreed/crm/v2/internal/history"
 	"github.com/harperreed/mdstore"
 )
 

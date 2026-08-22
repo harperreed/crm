@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/crm/internal/history"
-	"github.com/harperreed/crm/internal/models"
-	"github.com/harperreed/crm/internal/storage"
+	"github.com/harperreed/crm/v2/internal/history"
+	"github.com/harperreed/crm/v2/internal/models"
+	"github.com/harperreed/crm/v2/internal/storage"
 	_ "modernc.org/sqlite"
 )
 

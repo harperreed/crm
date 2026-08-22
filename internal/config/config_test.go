@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/harperreed/crm/internal/history"
+	"github.com/harperreed/crm/v2/internal/history"
 )
 
 func TestDefaultConfig(t *testing.T) {

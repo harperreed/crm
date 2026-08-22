@@ -1,4 +1,4 @@
-module github.com/harperreed/crm
+module github.com/harperreed/crm/v2
 
 go 1.25.5
 

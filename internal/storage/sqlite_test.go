@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/harperreed/crm/internal/history"
+	"github.com/harperreed/crm/v2/internal/history"
 )
 
 func TestSqliteStoreRetainsHistorySource(t *testing.T) {

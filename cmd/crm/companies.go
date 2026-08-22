@@ -10,8 +10,8 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/google/uuid"
-	"github.com/harperreed/crm/internal/models"
-	"github.com/harperreed/crm/internal/storage"
+	"github.com/harperreed/crm/v2/internal/models"
+	"github.com/harperreed/crm/v2/internal/storage"
 	"github.com/spf13/cobra"
 )
 

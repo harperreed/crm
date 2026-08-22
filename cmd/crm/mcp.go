@@ -3,7 +3,7 @@
 package main
 
 import (
-	mcpserver "github.com/harperreed/crm/internal/mcp"
+	mcpserver "github.com/harperreed/crm/v2/internal/mcp"
 	"github.com/spf13/cobra"
 )
 

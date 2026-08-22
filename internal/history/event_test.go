@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harperreed/crm/internal/models"
+	"github.com/harperreed/crm/v2/internal/models"
 )
 
 type newEventValidationCase struct {

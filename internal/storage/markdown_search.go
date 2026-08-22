@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/harperreed/crm/internal/models"
+	"github.com/harperreed/crm/v2/internal/models"
 	"gopkg.in/yaml.v3"
 )
 

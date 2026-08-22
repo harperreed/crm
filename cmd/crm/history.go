@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harperreed/crm/internal/history"
+	"github.com/harperreed/crm/v2/internal/history"
 	"github.com/spf13/cobra"
 )
 

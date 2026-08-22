@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/harperreed/crm/internal/history"
-	"github.com/harperreed/crm/internal/storage"
+	"github.com/harperreed/crm/v2/internal/history"
+	"github.com/harperreed/crm/v2/internal/storage"
 )
 
 // Config holds application-level settings persisted as JSON.

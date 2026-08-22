@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/harperreed/crm/internal/history"
-	"github.com/harperreed/crm/internal/storage"
+	"github.com/harperreed/crm/v2/internal/history"
+	"github.com/harperreed/crm/v2/internal/storage"
 )
 
 func TestLegacyNilCollectionsTransport(t *testing.T) {

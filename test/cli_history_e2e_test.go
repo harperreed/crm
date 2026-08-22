@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/harperreed/crm/internal/config"
+	"github.com/harperreed/crm/v2/internal/config"
 )
 
 var cliUUIDPattern = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
