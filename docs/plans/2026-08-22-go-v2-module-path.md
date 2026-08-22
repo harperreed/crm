@@ -7,7 +7,7 @@
 
 **Goal:** Publish CRM v2.3.0 as a valid Go v2 module that installs from the public `/v2` path and reports its installed version.
 
-**Architecture:** Keep the module at the repository root, add `/v2` to its identity and every first-party import, and guard that identity with a repository integration test. Preserve GoReleaser's linker-injected version, but fall back to the Go build metadata used by `go install`; keep local checkout builds on `dev`.
+**Architecture:** Keep the module at the repository root, add `/v2` to its identity and every first-party import, and guard that identity with a repository integration test. Preserve GoReleaser's linker-injected version, but fall back only to checksummed Go module metadata used by a version-query install; keep checksum-empty checkout builds on `dev`.
 
 **Tech Stack:** Go 1.25.5, Cobra, `runtime/debug`, Go modules, GoReleaser, GitHub Actions, Homebrew.
 
@@ -23,6 +23,9 @@
 - Modify: `cmd/crm/root.go:17-24`
 - Modify: `cmd/crm/root_test.go:62-67`
 - Modify: `cmd/crm/version.go:12-21`
+- Create: `test/cli_version_e2e_test.go`
+
+**Status:** Accepted. The first implementation landed in `0e2b7f0`; public-command and write-error coverage landed in `490133b` and `7d52894`. Review correction `9fed8a2` requires a nonempty `debug.BuildInfo.Main.Sum` before using the embedded module version, adds the checksum-empty pseudo-version unit case, and adds a real checkout end-to-end test for both public version commands.
 
 **Step 1: Write the failing unit test**
 
@@ -57,9 +60,16 @@ func TestVersionForBuild(t *testing.T) {
 		{
 			name:          "Go install version loses v prefix",
 			linkerVersion: "dev",
-			buildInfo:     &debug.BuildInfo{Main: debug.Module{Version: "v2.3.0"}},
+			buildInfo:     &debug.BuildInfo{Main: debug.Module{Version: "v2.3.0", Sum: "h1:installed"}},
 			buildInfoOK:   true,
 			want:          "2.3.0",
+		},
+		{
+			name:          "checkout pseudo-version stays dev",
+			linkerVersion: "dev",
+			buildInfo:     &debug.BuildInfo{Main: debug.Module{Version: "v2.2.1-0.20260822183510-ef91f365a575"}},
+			buildInfoOK:   true,
+			want:          "dev",
 		},
 		{
 			name:          "local build stays dev",
@@ -130,6 +140,9 @@ func versionForBuild(linkerVersion string, buildInfo *debug.BuildInfo, buildInfo
 	if !buildInfoOK || buildInfo == nil || buildInfo.Main.Version == "" || buildInfo.Main.Version == "(devel)" {
 		return linkerVersion
 	}
+	if buildInfo.Main.Sum == "" {
+		return linkerVersion
+	}
 	return strings.TrimPrefix(buildInfo.Main.Version, "v")
 }
 ```
@@ -162,19 +175,20 @@ Run:
 env -u GOROOT gofmt -w cmd/crm/build_version.go cmd/crm/build_version_test.go cmd/crm/root.go cmd/crm/root_test.go cmd/crm/version.go
 env -u GOROOT go test ./cmd/crm -run '^(TestVersionForBuild|TestRootVersionFlag)$' -count=1 -v
 env -u GOROOT go test ./cmd/crm -count=1
+env -u GOROOT go test ./test -run '^TestCLICheckoutBuildReportsDev$' -count=1 -v
 ```
 
-Expected: all commands exit 0. The test proves linker precedence, `v` removal, local fallback, and missing-metadata fallback without replacing `debug.ReadBuildInfo` or mocking application behavior.
+Expected: all commands exit 0. The unit test proves linker precedence, `v` removal for a checksummed module, checksum-empty checkout fallback, and missing-metadata fallback without replacing `debug.ReadBuildInfo` or mocking application behavior. The end-to-end test builds the real checkout and proves both `crm --version` and `crm version` report `dev`.
 
 **Step 5: Run fresh-eyes review and commit**
 
-Use `@fresh-eyes-review` on the five touched files. Pay special attention to linker compatibility, nil build metadata, and agreement between `crm --version` and `crm version`. Fix each finding and rerun Step 4.
+Use `@fresh-eyes-review` on the six touched files. Pay special attention to linker compatibility, nil and checksum-empty build metadata, and agreement between `crm --version` and `crm version`. Fix each finding and rerun Step 4.
 
 Then commit only this task:
 
 ```bash
 git status --short
-git add cmd/crm/build_version.go cmd/crm/build_version_test.go cmd/crm/root.go cmd/crm/root_test.go cmd/crm/version.go
+git add cmd/crm/build_version.go cmd/crm/build_version_test.go cmd/crm/root.go cmd/crm/root_test.go cmd/crm/version.go test/cli_version_e2e_test.go
 git diff --cached --check
 git commit -m "fix: report Go install module version"
 ```
@@ -182,6 +196,8 @@ git commit -m "fix: report Go install module version"
 ---
 
 ### Task 2: Migrate the module identity and first-party imports
+
+**Status:** Accepted at `f1bf321` with the module-path regression test and every current first-party Go reference migrated to `/v2`.
 
 **Files:**
 - Create: `test/module_path_test.go`
@@ -353,6 +369,8 @@ Before committing, inspect `git diff --cached --name-only` and unstage any file 
 
 ### Task 3: Document the supported Go install path
 
+**Status:** Accepted at `ef91f36`. The claims and regression test were re-reviewed after `9fed8a2` corrected checkout detection; the README's tagged-install and local-`dev` statements remain accurate.
+
 **Files:**
 - Modify: `test/module_path_test.go`
 - Modify: `README.md:8-28`
@@ -470,7 +488,7 @@ Use `@requesting-code-review` against the merge base with `main`. The review mus
 - module-major correctness and all current import paths;
 - both public version commands;
 - linker flag compatibility in `.goreleaser.yml`;
-- nil, empty, `(devel)`, tagged, and linker-injected version cases;
+- nil, empty, checksum-empty pseudo-version, `(devel)`, checksummed tagged, and linker-injected version cases;
 - historical-document preservation;
 - release and Homebrew compatibility.
 
@@ -550,50 +568,73 @@ Expected: a clean `fix/v2-module-path` worktree with only reviewed commits above
 
 ---
 
-### Task 5: Prove the remote commit before tagging
+### Task 5: Prove the candidate module before public tagging
 
 **Files:**
+- Temporary bare repository and install root: created beneath `candidate_root=$(mktemp -d)`
 - Remote branch: `origin/fix/v2-module-path`
-- Temporary install root: created with `mktemp -d`
 
-**Step 1: Push the reviewed branch**
+This procedure succeeded against clean commit `9fed8a2` without creating a project or origin tag. Run it again at the final reviewed HEAD because this documentation correction changes the release SHA.
+
+**Step 1: Require a clean reviewed candidate**
 
 ```bash
-git status --short --branch
-git push -u origin fix/v2-module-path
+test "$(git branch --show-current)" = fix/v2-module-path
+test -z "$(git status --porcelain)"
 release_sha=$(git rev-parse HEAD)
+candidate_root=$(mktemp -d)
+test -n "$candidate_root" || exit 1
+if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
+```
+
+Expected: the branch is clean, `$release_sha` names its reviewed HEAD, `$candidate_root` is a new isolated directory, and the project has no `v2.3.0` tag.
+
+**Step 2: Install a temporary candidate tag through `/v2`**
+
+```bash
+git clone --bare . "$candidate_root/crm.git"
+git --git-dir="$candidate_root/crm.git" tag v2.3.0 "$release_sha"
+test "$(git --git-dir="$candidate_root/crm.git" rev-parse v2.3.0^{commit})" = "$release_sha"
+git config --file "$candidate_root/gitconfig" url."file://$candidate_root/crm.git".insteadOf https://github.com/harperreed/crm
+env -u GOROOT \
+  GIT_CONFIG_GLOBAL="$candidate_root/gitconfig" \
+  GIT_CONFIG_NOSYSTEM=1 \
+  GIT_ALLOW_PROTOCOL=file:https \
+  GOPROXY=direct \
+  GONOSUMDB=github.com/harperreed/crm/v2 \
+  GOBIN="$candidate_root/bin" \
+  GOMODCACHE="$candidate_root/mod" \
+  GOCACHE="$candidate_root/cache" \
+  go install github.com/harperreed/crm/v2/cmd/crm@v2.3.0
+candidate_short_version=$("$candidate_root/bin/crm" --version) || exit 1
+candidate_long_version=$("$candidate_root/bin/crm" version) || exit 1
+test "$candidate_short_version" = "crm version 2.3.0"
+printf '%s\n' "$candidate_long_version" | rg '^crm version 2\.3\.0$'
+test "$(git rev-parse HEAD)" = "$release_sha"
+if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
+```
+
+Expected: the bare clone's temporary tag points to the exact reviewed SHA, the isolated version-query install succeeds, and both commands report `2.3.0`. The project checkout remains at the reviewed SHA and has no `v2.3.0` tag.
+
+This replaces the direct exact-SHA version query. Before a valid `/v2` tag exists, that lookup loads deprecation metadata from the old `v2.2.0` `@latest` tag and fails because its `go.mod` declares the invalid unsuffixed module path. Do not create a candidate tag in the project repository or on origin.
+
+**Step 3: Push the reviewed branch**
+
+```bash
+git push -u origin fix/v2-module-path
 test "$(git rev-parse origin/fix/v2-module-path)" = "$release_sha"
 ```
 
-Expected: the worktree is clean and the remote branch points to the reviewed commit.
+Expected: the remote branch points to the exact candidate SHA proved in Step 2.
 
-**Step 2: Install that exact remote commit through `/v2`**
-
-```bash
-release_sha=$(git rev-parse HEAD)
-install_root=$(mktemp -d)
-env -u GOROOT \
-  GOPROXY=direct \
-  GOBIN="$install_root/bin" \
-  GOMODCACHE="$install_root/mod" \
-  GOCACHE="$install_root/cache" \
-  go install "github.com/harperreed/crm/v2/cmd/crm@$release_sha"
-"$install_root/bin/crm" --version
-"$install_root/bin/crm" version
-```
-
-Expected: install and both commands exit 0. The first output line contains a Go pseudo-version derived from the exact commit and must not contain `dev`.
-
-If this fails, stop before merging or tagging. Diagnose the root cause with `@systematic-debugging`; do not move or invent a tag to work around it.
-
-**Step 3: Confirm the release target remains unique**
+**Step 4: Confirm the public release target remains unique**
 
 ```bash
 if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
 test -z "$(git ls-remote --tags origin refs/tags/v2.3.0)"
 ```
 
-Expected: both commands exit 0 because `v2.3.0` does not exist. If either finds a tag, stop and inspect it; never retarget a published tag.
+Expected: both commands exit 0 because neither the project repository nor origin has `v2.3.0`. If either finds a tag, stop and inspect it; never retarget a published tag.
 
 ---
 
@@ -684,4 +725,4 @@ git rev-parse main origin/main v2.3.0^{commit}
 gh release view v2.3.0 --json url,assets
 ```
 
-Expected: the worktree is clean; all three Git SHAs match `$release_sha`; the release URL and five expected release files are present. Report the canonical, vet, race, snapshot, remote-SHA install, workflow, Homebrew, and public tagged-install results without claiming more than the commands proved.
+Expected: the worktree is clean; all three Git SHAs match `$release_sha`; the release URL and five expected release files are present. Report the canonical, vet, race, snapshot, isolated candidate-tag install, workflow, Homebrew, and public tagged-install results without claiming more than the commands proved.
