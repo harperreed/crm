@@ -558,10 +558,18 @@ go_cache=$(mktemp -d)
 test -n "$go_cache"
 env -u GOROOT GOCACHE="$go_cache" goreleaser release --snapshot --clean
 archives=(dist/crm_*_*.tar.gz(N))
-checksum_files=(dist/checksums.txt(N))
+darwin_amd64_archives=(dist/crm_*_darwin_amd64.tar.gz(N))
+darwin_arm64_archives=(dist/crm_*_darwin_arm64.tar.gz(N))
+linux_amd64_archives=(dist/crm_*_linux_amd64.tar.gz(N))
+linux_arm64_archives=(dist/crm_*_linux_arm64.tar.gz(N))
+checksum_files=(dist/crm_*_checksums.txt(N))
 archive_count=${#archives[@]}
 checksum_count=${#checksum_files[@]}
 test "$archive_count" -eq 4
+test "${#darwin_amd64_archives[@]}" -eq 1
+test "${#darwin_arm64_archives[@]}" -eq 1
+test "${#linux_amd64_archives[@]}" -eq 1
+test "${#linux_arm64_archives[@]}" -eq 1
 test "$checksum_count" -eq 1
 for archive in "${archives[@]}"; do
   archive_listing=$(tar -tzf "$archive")
@@ -579,7 +587,7 @@ git diff --exit-code HEAD -- go.mod go.sum
 test -z "$(git status --porcelain)"
 ```
 
-Expected: snapshot exits 0; exactly four archives exist for Darwin/Linux on amd64/arm64; checksums exist; every archive contains README; `go.mod` and `go.sum` remain unchanged. Remove generated `dist/` only if Git reports it as ignored output; do not delete tracked files.
+Expected: snapshot exits 0; exactly one archive exists for each Darwin/Linux and amd64/arm64 target; exactly one `crm_*_checksums.txt` exists; every archive contains README; `go.mod` and `go.sum` remain unchanged. Remove generated `dist/` only if Git reports it as ignored output; do not delete tracked files.
 
 **Step 6: Commit review fixes, if any**
 
@@ -610,8 +618,10 @@ This procedure succeeded against clean commit `9fed8a2` without creating a proje
 set -euo pipefail
 test "$(git branch --show-current)" = fix/v2-module-path
 test -z "$(git status --porcelain)"
-test "$(git remote get-url origin)" = 'git@github.com:harperreed/crm.git'
-test "$(git remote get-url --push origin)" = 'git@github.com:harperreed/crm.git'
+origin_fetch_urls=$(git remote get-url --all origin)
+test "$origin_fetch_urls" = 'git@github.com:harperreed/crm.git'
+origin_push_urls=$(git remote get-url --push --all origin)
+test "$origin_push_urls" = 'git@github.com:harperreed/crm.git'
 git fetch origin --prune --tags
 if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
 remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
@@ -670,8 +680,10 @@ This replaces the direct exact-SHA version query. Before a valid `/v2` tag exist
 set -euo pipefail
 test "$(git branch --show-current)" = fix/v2-module-path
 test -z "$(git status --porcelain)"
-test "$(git remote get-url origin)" = 'git@github.com:harperreed/crm.git'
-test "$(git remote get-url --push origin)" = 'git@github.com:harperreed/crm.git'
+origin_fetch_urls=$(git remote get-url --all origin)
+test "$origin_fetch_urls" = 'git@github.com:harperreed/crm.git'
+origin_push_urls=$(git remote get-url --push --all origin)
+test "$origin_push_urls" = 'git@github.com:harperreed/crm.git'
 git fetch origin --prune --tags
 if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
 remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
@@ -707,37 +719,38 @@ Expected: the authoritative origin feature SHA equals the local reviewed branch,
 
 ```bash
 set -euo pipefail
-test "$(git remote get-url origin)" = 'git@github.com:harperreed/crm.git'
-test "$(git remote get-url --push origin)" = 'git@github.com:harperreed/crm.git'
+origin_fetch_urls=$(git remote get-url --all origin)
+test "$origin_fetch_urls" = 'git@github.com:harperreed/crm.git'
+origin_push_urls=$(git remote get-url --push --all origin)
+test "$origin_push_urls" = 'git@github.com:harperreed/crm.git'
 remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
 release_sha=${remote_tag_ref%%[[:space:]]*}
 test -n "$release_sha"
 release_run_id=
 for attempt in {1..10}; do
-  release_run_id=$(gh run list --workflow Release --commit "$release_sha" --limit 1 --json databaseId --jq '.[0].databaseId')
+  release_run_id=$(gh run list --repo harperreed/crm --workflow Release --commit "$release_sha" --limit 1 --json databaseId --jq '.[0].databaseId')
   if [[ -n "$release_run_id" ]]; then break; fi
   sleep 5
 done
 test -n "$release_run_id"
-release_head_sha=$(gh run view "$release_run_id" --json headSha --jq .headSha)
+release_head_sha=$(gh run view "$release_run_id" --repo harperreed/crm --json headSha --jq .headSha)
 test "$release_head_sha" = "$release_sha"
-gh run view "$release_run_id" --json databaseId,status,conclusion,headSha,url
-gh run watch "$release_run_id" --exit-status
-release_conclusion=$(gh run view "$release_run_id" --json conclusion --jq .conclusion)
+gh run view "$release_run_id" --repo harperreed/crm --json databaseId,status,conclusion,headSha,url
+gh run watch "$release_run_id" --repo harperreed/crm --exit-status
+release_conclusion=$(gh run view "$release_run_id" --repo harperreed/crm --json conclusion --jq .conclusion)
 test "$release_conclusion" = success
-release_assets=$(gh release view v2.3.0 --json assets --jq '.assets[].name')
+release_assets=$(gh release view v2.3.0 --repo harperreed/crm --json assets --jq '.assets[].name')
 release_asset_names=("${(@f)release_assets}")
-release_asset_count=${#release_asset_names[@]}
-test "$release_asset_count" -eq 5
-release_asset_lines=$'\n'"$release_assets"$'\n'
-for expected_asset in \
-  crm_2.3.0_darwin_amd64.tar.gz \
-  crm_2.3.0_darwin_arm64.tar.gz \
-  crm_2.3.0_linux_amd64.tar.gz \
-  crm_2.3.0_linux_arm64.tar.gz \
-  checksums.txt; do
-  [[ "$release_asset_lines" = *$'\n'"$expected_asset"$'\n'* ]]
-done
+expected_release_asset_names=(
+  crm_2.3.0_checksums.txt
+  crm_2.3.0_darwin_amd64.tar.gz
+  crm_2.3.0_darwin_arm64.tar.gz
+  crm_2.3.0_linux_amd64.tar.gz
+  crm_2.3.0_linux_arm64.tar.gz
+)
+actual_release_asset_set=$(printf '%s\n' "${(@o)release_asset_names}")
+expected_release_asset_set=$(printf '%s\n' "${(@o)expected_release_asset_names}")
+test "$actual_release_asset_set" = "$expected_release_asset_set"
 ```
 
 Expected: the workflow concludes `success`; the release has four platform archives plus checksums and targets `v2.3.0`.
@@ -746,14 +759,16 @@ If the workflow fails, collect its logs with a self-contained lookup:
 
 ```bash
 set -euo pipefail
-test "$(git remote get-url origin)" = 'git@github.com:harperreed/crm.git'
-test "$(git remote get-url --push origin)" = 'git@github.com:harperreed/crm.git'
+origin_fetch_urls=$(git remote get-url --all origin)
+test "$origin_fetch_urls" = 'git@github.com:harperreed/crm.git'
+origin_push_urls=$(git remote get-url --push --all origin)
+test "$origin_push_urls" = 'git@github.com:harperreed/crm.git'
 remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
 release_sha=${remote_tag_ref%%[[:space:]]*}
 test -n "$release_sha"
-release_run_id=$(gh run list --workflow Release --commit "$release_sha" --limit 1 --json databaseId --jq '.[0].databaseId')
+release_run_id=$(gh run list --repo harperreed/crm --workflow Release --commit "$release_sha" --limit 1 --json databaseId --jq '.[0].databaseId')
 test -n "$release_run_id"
-gh run view "$release_run_id" --log-failed
+gh run view "$release_run_id" --repo harperreed/crm --log-failed
 ```
 
 Then apply `@systematic-debugging` and repair the workflow without moving `v2.3.0`.
@@ -766,24 +781,20 @@ formula_content=$(gh api repos/harperreed/homebrew-tap/contents/Formula/crm.rb -
 formula=$(base64 --decode <<< "$formula_content")
 explicit_versions=$(rg -o --replace '$1' '^[[:space:]]*version[[:space:]]+"([^"]+)"[[:space:]]*$' <<< "$formula")
 test "$explicit_versions" = "2.3.0"
-crm_release_urls=$(rg 'https://github\.com/harperreed/crm/releases/download/' <<< "$formula")
-crm_release_url_lines=("${(@f)crm_release_urls}")
-crm_release_url_count=${#crm_release_url_lines[@]}
-test "$crm_release_url_count" -eq 4
-matching_release_urls=$(rg --pcre2 '^[[:space:]]*url "https://github\.com/harperreed/crm/releases/download/v2\.3\.0/crm_2\.3\.0_(?:darwin|linux)_(?:amd64|arm64)\.tar\.gz"[[:space:]]*$' <<< "$formula")
-matching_release_url_lines=("${(@f)matching_release_urls}")
-matching_release_url_count=${#matching_release_url_lines[@]}
-test "$matching_release_url_count" -eq 4
-if unexpected_release_urls=$(rg --pcre2 'releases/download/v(?!2\.3\.0/)' <<< "$formula"); then
-  print -r -- "$unexpected_release_urls"
-  exit 1
-else
-  unexpected_release_url_status=$?
-fi
-test "$unexpected_release_url_status" -eq 1
+formula_urls=$(rg -o --replace '$1' '^[[:space:]]*url[[:space:]]+"([^"]+)"[[:space:]]*$' <<< "$formula")
+formula_url_lines=("${(@f)formula_urls}")
+expected_formula_urls=(
+  'https://github.com/harperreed/crm/releases/download/v2.3.0/crm_2.3.0_darwin_amd64.tar.gz'
+  'https://github.com/harperreed/crm/releases/download/v2.3.0/crm_2.3.0_darwin_arm64.tar.gz'
+  'https://github.com/harperreed/crm/releases/download/v2.3.0/crm_2.3.0_linux_amd64.tar.gz'
+  'https://github.com/harperreed/crm/releases/download/v2.3.0/crm_2.3.0_linux_arm64.tar.gz'
+)
+actual_formula_url_set=$(printf '%s\n' "${(@o)formula_url_lines}")
+expected_formula_url_set=$(printf '%s\n' "${(@o)expected_formula_urls}")
+test "$actual_formula_url_set" = "$expected_formula_url_set"
 ```
 
-Expected: the formula's explicit version is exactly `2.3.0`; it has exactly four CRM release URL lines; all four match the v2.3.0 Darwin/Linux and amd64/arm64 archive schema; and no release URL names another version.
+Expected: the formula's explicit version is exactly `2.3.0`, and its complete sorted URL set equals the four v2.3.0 Darwin/Linux and amd64/arm64 archive URLs. Duplicates, extra URLs, stale versions, and wrong artifact names all fail.
 
 **Step 4: Verify the public tagged Go install**
 
@@ -791,8 +802,9 @@ Expected: the formula's explicit version is exactly `2.3.0`; it has exactly four
 set -euo pipefail
 public_install_root=$(mktemp -d)
 test -n "$public_install_root"
-env -u GOROOT \
-  GOPROXY=https://proxy.golang.org,direct \
+env -u GOROOT -u GOPRIVATE -u GONOPROXY -u GONOSUMDB \
+  GOPROXY=https://proxy.golang.org \
+  GOSUMDB=sum.golang.org \
   GOBIN="$public_install_root/bin" \
   GOMODCACHE="$public_install_root/mod" \
   GOCACHE="$public_install_root/cache" \
@@ -804,7 +816,7 @@ test "$public_short_version" = "crm version 2.3.0"
 test "$public_long_first_line" = "crm version 2.3.0"
 ```
 
-Expected: install succeeds from a clean module cache, `--version` reports exactly `crm version 2.3.0`, and the detailed command's first line is the same. Retry only for observed proxy propagation; do not weaken the check to `GOPROXY=direct` as the final public proof.
+Expected: install succeeds through the public Go proxy and checksum database with no direct or inherited private-module fallback; `--version` reports exactly `crm version 2.3.0`, and the detailed command's first line is the same. Retry only for observed proxy propagation; do not weaken the final public proof with `direct` or private-module overrides.
 
 **Step 5: Record final evidence**
 
@@ -812,8 +824,10 @@ Expected: install succeeds from a clean module cache, `--version` reports exactl
 set -euo pipefail
 test "$(git branch --show-current)" = main
 test -z "$(git status --porcelain)"
-test "$(git remote get-url origin)" = 'git@github.com:harperreed/crm.git'
-test "$(git remote get-url --push origin)" = 'git@github.com:harperreed/crm.git'
+origin_fetch_urls=$(git remote get-url --all origin)
+test "$origin_fetch_urls" = 'git@github.com:harperreed/crm.git'
+origin_push_urls=$(git remote get-url --push --all origin)
+test "$origin_push_urls" = 'git@github.com:harperreed/crm.git'
 git fetch origin --prune --tags
 remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
 release_sha=${remote_tag_ref%%[[:space:]]*}
@@ -823,11 +837,19 @@ test "$(git rev-parse main)" = "$release_sha"
 remote_main_ref=$(git ls-remote --heads origin refs/heads/main)
 remote_main_sha=${remote_main_ref%%[[:space:]]*}
 test "$remote_main_sha" = "$release_sha"
-release_assets=$(gh release view v2.3.0 --json assets --jq '.assets[].name')
+release_assets=$(gh release view v2.3.0 --repo harperreed/crm --json assets --jq '.assets[].name')
 release_asset_names=("${(@f)release_assets}")
-release_asset_count=${#release_asset_names[@]}
-test "$release_asset_count" -eq 5
-release_url=$(gh release view v2.3.0 --json url --jq .url)
+expected_release_asset_names=(
+  crm_2.3.0_checksums.txt
+  crm_2.3.0_darwin_amd64.tar.gz
+  crm_2.3.0_darwin_arm64.tar.gz
+  crm_2.3.0_linux_amd64.tar.gz
+  crm_2.3.0_linux_arm64.tar.gz
+)
+actual_release_asset_set=$(printf '%s\n' "${(@o)release_asset_names}")
+expected_release_asset_set=$(printf '%s\n' "${(@o)expected_release_asset_names}")
+test "$actual_release_asset_set" = "$expected_release_asset_set"
+release_url=$(gh release view v2.3.0 --repo harperreed/crm --json url --jq .url)
 test -n "$release_url"
 ```
 
