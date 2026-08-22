@@ -610,7 +610,8 @@ This procedure succeeded against clean commit `9fed8a2` without creating a proje
 set -euo pipefail
 test "$(git branch --show-current)" = fix/v2-module-path
 test -z "$(git status --porcelain)"
-test "$(git remote get-url --push origin)" = git@github.com:harperreed/crm.git
+test "$(git remote get-url origin)" = 'git@github.com:harperreed/crm.git'
+test "$(git remote get-url --push origin)" = 'git@github.com:harperreed/crm.git'
 git fetch origin --prune --tags
 if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
 remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
@@ -669,7 +670,8 @@ This replaces the direct exact-SHA version query. Before a valid `/v2` tag exist
 set -euo pipefail
 test "$(git branch --show-current)" = fix/v2-module-path
 test -z "$(git status --porcelain)"
-test "$(git remote get-url --push origin)" = git@github.com:harperreed/crm.git
+test "$(git remote get-url origin)" = 'git@github.com:harperreed/crm.git'
+test "$(git remote get-url --push origin)" = 'git@github.com:harperreed/crm.git'
 git fetch origin --prune --tags
 if git show-ref --verify --quiet refs/tags/v2.3.0; then exit 1; fi
 remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
@@ -705,6 +707,8 @@ Expected: the authoritative origin feature SHA equals the local reviewed branch,
 
 ```bash
 set -euo pipefail
+test "$(git remote get-url origin)" = 'git@github.com:harperreed/crm.git'
+test "$(git remote get-url --push origin)" = 'git@github.com:harperreed/crm.git'
 remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
 release_sha=${remote_tag_ref%%[[:space:]]*}
 test -n "$release_sha"
@@ -742,6 +746,8 @@ If the workflow fails, collect its logs with a self-contained lookup:
 
 ```bash
 set -euo pipefail
+test "$(git remote get-url origin)" = 'git@github.com:harperreed/crm.git'
+test "$(git remote get-url --push origin)" = 'git@github.com:harperreed/crm.git'
 remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
 release_sha=${remote_tag_ref%%[[:space:]]*}
 test -n "$release_sha"
@@ -756,15 +762,28 @@ Then apply `@systematic-debugging` and repair the workflow without moving `v2.3.
 
 ```bash
 set -euo pipefail
-formula=$(gh api repos/harperreed/homebrew-tap/contents/Formula/crm.rb --jq .content | base64 --decode)
-[[ "$formula" = *"https://github.com/harperreed/crm/releases/download/v2.3.0/"* ]]
-[[ "$formula" = *"crm_2.3.0_"* ]]
-for old_minor in 0 1 2; do
-  if [[ "$formula" = *"/releases/download/v2.${old_minor}."* ]]; then exit 1; fi
-done
+formula_content=$(gh api repos/harperreed/homebrew-tap/contents/Formula/crm.rb --jq .content)
+formula=$(base64 --decode <<< "$formula_content")
+explicit_versions=$(rg -o --replace '$1' '^[[:space:]]*version[[:space:]]+"([^"]+)"[[:space:]]*$' <<< "$formula")
+test "$explicit_versions" = "2.3.0"
+crm_release_urls=$(rg 'https://github\.com/harperreed/crm/releases/download/' <<< "$formula")
+crm_release_url_lines=("${(@f)crm_release_urls}")
+crm_release_url_count=${#crm_release_url_lines[@]}
+test "$crm_release_url_count" -eq 4
+matching_release_urls=$(rg --pcre2 '^[[:space:]]*url "https://github\.com/harperreed/crm/releases/download/v2\.3\.0/crm_2\.3\.0_(?:darwin|linux)_(?:amd64|arm64)\.tar\.gz"[[:space:]]*$' <<< "$formula")
+matching_release_url_lines=("${(@f)matching_release_urls}")
+matching_release_url_count=${#matching_release_url_lines[@]}
+test "$matching_release_url_count" -eq 4
+if unexpected_release_urls=$(rg --pcre2 'releases/download/v(?!2\.3\.0/)' <<< "$formula"); then
+  print -r -- "$unexpected_release_urls"
+  exit 1
+else
+  unexpected_release_url_status=$?
+fi
+test "$unexpected_release_url_status" -eq 1
 ```
 
-Expected: the published formula contains a v2.3.0 release URL and artifact name and contains no v2.0, v2.1, or v2.2 release URL. The formula may omit an explicit `version` line when Homebrew derives it from the URL.
+Expected: the formula's explicit version is exactly `2.3.0`; it has exactly four CRM release URL lines; all four match the v2.3.0 Darwin/Linux and amd64/arm64 archive schema; and no release URL names another version.
 
 **Step 4: Verify the public tagged Go install**
 
@@ -793,7 +812,8 @@ Expected: install succeeds from a clean module cache, `--version` reports exactl
 set -euo pipefail
 test "$(git branch --show-current)" = main
 test -z "$(git status --porcelain)"
-test "$(git remote get-url --push origin)" = git@github.com:harperreed/crm.git
+test "$(git remote get-url origin)" = 'git@github.com:harperreed/crm.git'
+test "$(git remote get-url --push origin)" = 'git@github.com:harperreed/crm.git'
 git fetch origin --prune --tags
 remote_tag_ref=$(git ls-remote --tags --refs origin refs/tags/v2.3.0)
 release_sha=${remote_tag_ref%%[[:space:]]*}
