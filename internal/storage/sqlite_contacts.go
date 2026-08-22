@@ -233,12 +233,13 @@ func scanContact(row rowScanner) (*models.Contact, error) {
 	if err := decodeSQLiteJSON(tagsStr, &c.Tags); err != nil {
 		return nil, fmt.Errorf("unmarshal tags: %w", err)
 	}
+	canonicalizeContactCollections(&c)
 
 	return &c, nil
 }
 
 func sqliteContactSnapshot(contact *models.Contact) (json.RawMessage, error) {
-	normalized := *contact
+	normalized := *canonicalContact(contact)
 	normalized.CreatedAt = contact.CreatedAt.UTC()
 	normalized.UpdatedAt = contact.UpdatedAt.UTC()
 	return history.SnapshotContact(&normalized)
@@ -273,6 +274,7 @@ func scanContactRows(rows *sql.Rows) ([]*models.Contact, error) {
 		if err := decodeSQLiteJSON(tagsStr, &c.Tags); err != nil {
 			return nil, fmt.Errorf("unmarshal tags: %w", err)
 		}
+		canonicalizeContactCollections(&c)
 
 		contacts = append(contacts, &c)
 	}

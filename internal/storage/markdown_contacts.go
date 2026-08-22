@@ -54,24 +54,16 @@ func frontmatterToContact(fm contactFrontmatter) (*models.Contact, error) {
 	if err != nil {
 		return nil, err
 	}
-	fields := map[string]any(fm.Fields)
-	if fields == nil {
-		fields = make(map[string]any)
-	}
-	tags := fm.Tags
-	if tags == nil {
-		tags = []string{}
-	}
-	return &models.Contact{
+	return canonicalContact(&models.Contact{
 		ID:        id,
 		Name:      fm.Name,
 		Email:     fm.Email,
 		Phone:     fm.Phone,
-		Fields:    fields,
-		Tags:      tags,
+		Fields:    map[string]any(fm.Fields),
+		Tags:      fm.Tags,
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
-	}, nil
+	}), nil
 }
 
 // writeContact writes a contact as a .md file with YAML frontmatter.
@@ -146,7 +138,7 @@ func (s *MarkdownStore) CreateContact(contact *models.Contact) error {
 	if existing != nil {
 		return fmt.Errorf("%w: contact %s already exists", ErrHistoryConflict, contact.ID)
 	}
-	candidate := canonicalMarkdownContact(contact)
+	candidate := canonicalContact(contact)
 	after, err := markdownContactSnapshot(candidate)
 	if err != nil {
 		return fmt.Errorf("snapshot contact: %w", err)
@@ -299,7 +291,7 @@ func (s *MarkdownStore) UpdateContact(contact *models.Contact) error {
 		return fmt.Errorf("snapshot current contact: %w", err)
 	}
 	candidate := *contact
-	canonicalizeMarkdownContactCollections(&candidate)
+	canonicalizeContactCollections(&candidate)
 	candidate.CreatedAt = existing.CreatedAt
 	requestedUpdatedAt := candidate.UpdatedAt
 	candidate.UpdatedAt = existing.UpdatedAt

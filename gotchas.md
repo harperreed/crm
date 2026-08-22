@@ -7,3 +7,4 @@
 - The SQLite list-query builders concatenate only fixed SQL clause strings. Filter values remain parameterized; keep the two G202 annotations narrow and justified.
 - History events are immutable and have no expiry or purge path. Deleting a current record leaves its snapshots, including personal data, in history indefinitely.
 - The Markdown history mutex protects one process only. Do not run concurrent Markdown writers in separate CRM processes; startup recovery handles interrupted pending writes, not cross-process races.
+- SQLite history lists fetch related entity IDs once per returned event, capped at 100 events. Batch that lookup if history browsing becomes a measured bottleneck.

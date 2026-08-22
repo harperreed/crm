@@ -52,23 +52,15 @@ func frontmatterToCompany(fm companyFrontmatter) (*models.Company, error) {
 	if err != nil {
 		return nil, err
 	}
-	fields := map[string]any(fm.Fields)
-	if fields == nil {
-		fields = make(map[string]any)
-	}
-	tags := fm.Tags
-	if tags == nil {
-		tags = []string{}
-	}
-	return &models.Company{
+	return canonicalCompany(&models.Company{
 		ID:        id,
 		Name:      fm.Name,
 		Domain:    fm.Domain,
-		Fields:    fields,
-		Tags:      tags,
+		Fields:    map[string]any(fm.Fields),
+		Tags:      fm.Tags,
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
-	}, nil
+	}), nil
 }
 
 // writeCompany writes a company as a .md file with YAML frontmatter.
@@ -143,7 +135,7 @@ func (s *MarkdownStore) CreateCompany(company *models.Company) error {
 	if existing != nil {
 		return fmt.Errorf("%w: company %s already exists", ErrHistoryConflict, company.ID)
 	}
-	candidate := canonicalMarkdownCompany(company)
+	candidate := canonicalCompany(company)
 	after, err := markdownCompanySnapshot(candidate)
 	if err != nil {
 		return fmt.Errorf("snapshot company: %w", err)
@@ -293,7 +285,7 @@ func (s *MarkdownStore) UpdateCompany(company *models.Company) error {
 		return fmt.Errorf("snapshot current company: %w", err)
 	}
 	candidate := *company
-	canonicalizeMarkdownCompanyCollections(&candidate)
+	canonicalizeCompanyCollections(&candidate)
 	candidate.CreatedAt = existing.CreatedAt
 	requestedUpdatedAt := candidate.UpdatedAt
 	candidate.UpdatedAt = existing.UpdatedAt

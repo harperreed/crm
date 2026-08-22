@@ -233,12 +233,13 @@ func scanCompany(row rowScanner) (*models.Company, error) {
 	if err := decodeSQLiteJSON(tagsStr, &c.Tags); err != nil {
 		return nil, fmt.Errorf("unmarshal tags: %w", err)
 	}
+	canonicalizeCompanyCollections(&c)
 
 	return &c, nil
 }
 
 func sqliteCompanySnapshot(company *models.Company) (json.RawMessage, error) {
-	normalized := *company
+	normalized := *canonicalCompany(company)
 	normalized.CreatedAt = company.CreatedAt.UTC()
 	normalized.UpdatedAt = company.UpdatedAt.UTC()
 	return history.SnapshotCompany(&normalized)
@@ -273,6 +274,7 @@ func scanCompanyRows(rows *sql.Rows) ([]*models.Company, error) {
 		if err := decodeSQLiteJSON(tagsStr, &c.Tags); err != nil {
 			return nil, fmt.Errorf("unmarshal tags: %w", err)
 		}
+		canonicalizeCompanyCollections(&c)
 
 		companies = append(companies, &c)
 	}

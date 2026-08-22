@@ -764,7 +764,7 @@ func (s *MarkdownStore) currentHistorySnapshot(event *history.Event) (json.RawMe
 }
 
 func markdownContactSnapshot(contact *models.Contact) (json.RawMessage, error) {
-	normalized := *contact
+	normalized := *canonicalContact(contact)
 	normalized.CreatedAt = contact.CreatedAt.UTC()
 	normalized.UpdatedAt = contact.UpdatedAt.UTC()
 	return history.SnapshotContact(&normalized)
@@ -1042,41 +1042,11 @@ func exactJSONNumberEncoding(value any, number json.Number) bool {
 	return err == nil && string(encoded) == number.String()
 }
 
-func canonicalMarkdownContact(contact *models.Contact) *models.Contact {
-	candidate := *contact
-	canonicalizeMarkdownContactCollections(&candidate)
-	return &candidate
-}
-
-func canonicalizeMarkdownContactCollections(contact *models.Contact) {
-	if contact.Fields == nil {
-		contact.Fields = make(map[string]any)
-	}
-	if contact.Tags == nil {
-		contact.Tags = []string{}
-	}
-}
-
 func markdownCompanySnapshot(company *models.Company) (json.RawMessage, error) {
-	normalized := *company
+	normalized := *canonicalCompany(company)
 	normalized.CreatedAt = company.CreatedAt.UTC()
 	normalized.UpdatedAt = company.UpdatedAt.UTC()
 	return history.SnapshotCompany(&normalized)
-}
-
-func canonicalMarkdownCompany(company *models.Company) *models.Company {
-	candidate := *company
-	canonicalizeMarkdownCompanyCollections(&candidate)
-	return &candidate
-}
-
-func canonicalizeMarkdownCompanyCollections(company *models.Company) {
-	if company.Fields == nil {
-		company.Fields = make(map[string]any)
-	}
-	if company.Tags == nil {
-		company.Tags = []string{}
-	}
 }
 
 func markdownRelationshipSnapshot(relationship *models.Relationship) (json.RawMessage, error) {

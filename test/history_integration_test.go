@@ -3,6 +3,7 @@
 package test
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -43,6 +44,130 @@ func TestHistoryParity(t *testing.T) {
 		t.Run(factory.name, func(t *testing.T) {
 			runHistoryParityScenario(t, factory.open(t))
 		})
+	}
+}
+
+func TestHistoryNilCollectionParity(t *testing.T) {
+	for _, factory := range historyStoreFactories() {
+		t.Run(factory.name, func(t *testing.T) {
+			runHistoryNilCollectionScenario(t, factory.open(t))
+		})
+	}
+}
+
+func runHistoryNilCollectionScenario(t *testing.T, store storage.Storage) {
+	t.Helper()
+	contact := &models.Contact{
+		ID:        uuid.New(),
+		Name:      "Nil Contact",
+		CreatedAt: historyBaseTime,
+		UpdatedAt: historyBaseTime,
+	}
+	company := &models.Company{
+		ID:        uuid.New(),
+		Name:      "Nil Company",
+		CreatedAt: historyBaseTime,
+		UpdatedAt: historyBaseTime,
+	}
+
+	mustStoreMutation(t, "CreateContact", func() error { return store.CreateContact(contact) })
+	mustStoreMutation(t, "CreateCompany", func() error { return store.CreateCompany(company) })
+	assertCanonicalContactStateAndHistory(t, store, contact.ID, 1)
+	assertCanonicalCompanyStateAndHistory(t, store, company.ID, 1)
+
+	contact.Name = "Updated Nil Contact"
+	contact.Fields = nil
+	contact.Tags = nil
+	contact.UpdatedAt = historyBaseTime.Add(time.Minute)
+	company.Name = "Updated Nil Company"
+	company.Fields = nil
+	company.Tags = nil
+	company.UpdatedAt = historyBaseTime.Add(time.Minute)
+	mustStoreMutation(t, "UpdateContact", func() error { return store.UpdateContact(contact) })
+	mustStoreMutation(t, "UpdateCompany", func() error { return store.UpdateCompany(company) })
+	assertCanonicalContactStateAndHistory(t, store, contact.ID, 2)
+	assertCanonicalCompanyStateAndHistory(t, store, company.ID, 2)
+}
+
+func assertCanonicalContactStateAndHistory(t *testing.T, store storage.Storage, id uuid.UUID, wantEvents int) {
+	t.Helper()
+	contact, err := store.GetContact(id)
+	if err != nil {
+		t.Fatalf("GetContact(%s): %v", id, err)
+	}
+	if contact.Fields == nil || len(contact.Fields) != 0 {
+		t.Errorf("GetContact(%s).Fields = %#v, want non-nil empty map", id, contact.Fields)
+	}
+	if contact.Tags == nil || len(contact.Tags) != 0 {
+		t.Errorf("GetContact(%s).Tags = %#v, want non-nil empty slice", id, contact.Tags)
+	}
+	assertCanonicalContactSnapshots(t, store, id, wantEvents)
+}
+
+func assertCanonicalContactSnapshots(t *testing.T, store storage.Storage, id uuid.UUID, wantEvents int) {
+	t.Helper()
+	summaries := mustListHistory(t, store, id)
+	if len(summaries) != wantEvents {
+		t.Fatalf("ListHistory(%s) len = %d, want %d", id, len(summaries), wantEvents)
+	}
+	for _, summary := range summaries {
+		event, err := store.GetHistoryEvent(summary.ID.String())
+		if err != nil {
+			t.Fatalf("GetHistoryEvent(%s): %v", summary.ID, err)
+		}
+		for side, snapshot := range map[string]json.RawMessage{"before": event.Before, "after": event.After} {
+			if len(snapshot) == 0 || bytes.Equal(bytes.TrimSpace(snapshot), []byte("null")) {
+				continue
+			}
+			contact, err := history.ContactFromSnapshot(snapshot)
+			if err != nil {
+				t.Fatalf("decode contact %s snapshot: %v", side, err)
+			}
+			if contact.Fields == nil || len(contact.Fields) != 0 || contact.Tags == nil || len(contact.Tags) != 0 {
+				t.Errorf("contact %s snapshot collections = fields:%#v tags:%#v, want non-nil empty", side, contact.Fields, contact.Tags)
+			}
+		}
+	}
+}
+
+func assertCanonicalCompanyStateAndHistory(t *testing.T, store storage.Storage, id uuid.UUID, wantEvents int) {
+	t.Helper()
+	company, err := store.GetCompany(id)
+	if err != nil {
+		t.Fatalf("GetCompany(%s): %v", id, err)
+	}
+	if company.Fields == nil || len(company.Fields) != 0 {
+		t.Errorf("GetCompany(%s).Fields = %#v, want non-nil empty map", id, company.Fields)
+	}
+	if company.Tags == nil || len(company.Tags) != 0 {
+		t.Errorf("GetCompany(%s).Tags = %#v, want non-nil empty slice", id, company.Tags)
+	}
+	assertCanonicalCompanySnapshots(t, store, id, wantEvents)
+}
+
+func assertCanonicalCompanySnapshots(t *testing.T, store storage.Storage, id uuid.UUID, wantEvents int) {
+	t.Helper()
+	summaries := mustListHistory(t, store, id)
+	if len(summaries) != wantEvents {
+		t.Fatalf("ListHistory(%s) len = %d, want %d", id, len(summaries), wantEvents)
+	}
+	for _, summary := range summaries {
+		event, err := store.GetHistoryEvent(summary.ID.String())
+		if err != nil {
+			t.Fatalf("GetHistoryEvent(%s): %v", summary.ID, err)
+		}
+		for side, snapshot := range map[string]json.RawMessage{"before": event.Before, "after": event.After} {
+			if len(snapshot) == 0 || bytes.Equal(bytes.TrimSpace(snapshot), []byte("null")) {
+				continue
+			}
+			company, err := history.CompanyFromSnapshot(snapshot)
+			if err != nil {
+				t.Fatalf("decode company %s snapshot: %v", side, err)
+			}
+			if company.Fields == nil || len(company.Fields) != 0 || company.Tags == nil || len(company.Tags) != 0 {
+				t.Errorf("company %s snapshot collections = fields:%#v tags:%#v, want non-nil empty", side, company.Fields, company.Tags)
+			}
+		}
 	}
 }
 

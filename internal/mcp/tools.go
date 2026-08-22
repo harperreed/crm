@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/harperreed/crm/internal/history"
 	"github.com/harperreed/crm/internal/models"
 	"github.com/harperreed/crm/internal/storage"
 )
@@ -341,15 +342,17 @@ func (s *Server) handleGetContact(_ context.Context, req *mcp.CallToolRequest) (
 	return jsonResult(contact)
 }
 
+type updateContactParams struct {
+	ID     string          `json:"id"`
+	Name   *string         `json:"name"`
+	Email  *string         `json:"email"`
+	Phone  *string         `json:"phone"`
+	Fields map[string]any  `json:"fields"`
+	Tags   json.RawMessage `json:"tags"`
+}
+
 func (s *Server) handleUpdateContact(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	var params struct {
-		ID     string          `json:"id"`
-		Name   *string         `json:"name"`
-		Email  *string         `json:"email"`
-		Phone  *string         `json:"phone"`
-		Fields map[string]any  `json:"fields"`
-		Tags   json.RawMessage `json:"tags"`
-	}
+	var params updateContactParams
 	if err := json.Unmarshal(req.Params.Arguments, &params); err != nil {
 		return errResult(fmt.Sprintf("invalid arguments: %v", err))
 	}
@@ -362,37 +365,32 @@ func (s *Server) handleUpdateContact(_ context.Context, req *mcp.CallToolRequest
 		return errResult(fmt.Sprintf("get contact: %v", err))
 	}
 
-	if params.Name != nil {
-		contact.Name = *params.Name
+	before, err := history.SnapshotContact(contact)
+	if err != nil {
+		return errResult(fmt.Sprintf("snapshot contact: %v", err))
 	}
-	if params.Email != nil {
-		contact.Email = *params.Email
-	}
-	if params.Phone != nil {
-		contact.Phone = *params.Phone
-	}
-	// Merge fields: add/overwrite keys from params into existing map.
-	for k, v := range params.Fields {
-		contact.Fields[k] = v
-	}
-	// Replace tags only if explicitly provided (non-null).
-	if params.Tags != nil {
-		var tags []string
-		if err := json.Unmarshal(params.Tags, &tags); err != nil {
-			return errResult(fmt.Sprintf("invalid tags: %v", err))
-		}
-		contact.Tags = tags
+	candidate := contactUpdateCandidate(contact)
+	if err := applyContactUpdate(&candidate, params); err != nil {
+		return errResult(err.Error())
 	}
 
-	contact.Touch()
-	if err := s.store.UpdateContact(contact); err != nil {
+	after, err := history.SnapshotContact(&candidate)
+	if err != nil {
+		return errResult(fmt.Sprintf("snapshot updated contact: %v", err))
+	}
+	changed, err := history.ChangedFields(history.EntityContact, before, after)
+	if err != nil {
+		return errResult(fmt.Sprintf("compare contact snapshots: %v", err))
+	}
+	if len(changed) == 0 {
+		return jsonResult(contact)
+	}
+
+	candidate.Touch()
+	if err := s.store.UpdateContact(&candidate); err != nil {
 		return errResult(fmt.Sprintf("update contact: %v", err))
 	}
-	persisted, err := s.store.GetContact(contact.ID)
-	if err != nil {
-		return errResult(fmt.Sprintf("get contact: %v", err))
-	}
-	return jsonResult(persisted)
+	return jsonResult(&candidate)
 }
 
 func (s *Server) handleDeleteContact(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -490,14 +488,16 @@ func (s *Server) handleGetCompany(_ context.Context, req *mcp.CallToolRequest) (
 	return jsonResult(company)
 }
 
+type updateCompanyParams struct {
+	ID     string          `json:"id"`
+	Name   *string         `json:"name"`
+	Domain *string         `json:"domain"`
+	Fields map[string]any  `json:"fields"`
+	Tags   json.RawMessage `json:"tags"`
+}
+
 func (s *Server) handleUpdateCompany(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	var params struct {
-		ID     string          `json:"id"`
-		Name   *string         `json:"name"`
-		Domain *string         `json:"domain"`
-		Fields map[string]any  `json:"fields"`
-		Tags   json.RawMessage `json:"tags"`
-	}
+	var params updateCompanyParams
 	if err := json.Unmarshal(req.Params.Arguments, &params); err != nil {
 		return errResult(fmt.Sprintf("invalid arguments: %v", err))
 	}
@@ -510,34 +510,103 @@ func (s *Server) handleUpdateCompany(_ context.Context, req *mcp.CallToolRequest
 		return errResult(fmt.Sprintf("get company: %v", err))
 	}
 
-	if params.Name != nil {
-		company.Name = *params.Name
+	before, err := history.SnapshotCompany(company)
+	if err != nil {
+		return errResult(fmt.Sprintf("snapshot company: %v", err))
 	}
-	if params.Domain != nil {
-		company.Domain = *params.Domain
-	}
-	// Merge fields: add/overwrite keys from params into existing map.
-	for k, v := range params.Fields {
-		company.Fields[k] = v
-	}
-	// Replace tags only if explicitly provided (non-null).
-	if params.Tags != nil {
-		var tags []string
-		if err := json.Unmarshal(params.Tags, &tags); err != nil {
-			return errResult(fmt.Sprintf("invalid tags: %v", err))
-		}
-		company.Tags = tags
+	candidate := companyUpdateCandidate(company)
+	if err := applyCompanyUpdate(&candidate, params); err != nil {
+		return errResult(err.Error())
 	}
 
-	company.Touch()
-	if err := s.store.UpdateCompany(company); err != nil {
+	after, err := history.SnapshotCompany(&candidate)
+	if err != nil {
+		return errResult(fmt.Sprintf("snapshot updated company: %v", err))
+	}
+	changed, err := history.ChangedFields(history.EntityCompany, before, after)
+	if err != nil {
+		return errResult(fmt.Sprintf("compare company snapshots: %v", err))
+	}
+	if len(changed) == 0 {
+		return jsonResult(company)
+	}
+
+	candidate.Touch()
+	if err := s.store.UpdateCompany(&candidate); err != nil {
 		return errResult(fmt.Sprintf("update company: %v", err))
 	}
-	persisted, err := s.store.GetCompany(company.ID)
-	if err != nil {
-		return errResult(fmt.Sprintf("get company: %v", err))
+	return jsonResult(&candidate)
+}
+
+func contactUpdateCandidate(contact *models.Contact) models.Contact {
+	candidate := *contact
+	candidate.Fields = make(map[string]any, len(contact.Fields))
+	for key, value := range contact.Fields {
+		candidate.Fields[key] = value
 	}
-	return jsonResult(persisted)
+	candidate.Tags = append([]string{}, contact.Tags...)
+	return candidate
+}
+
+func applyContactUpdate(candidate *models.Contact, params updateContactParams) error {
+	if params.Name != nil {
+		candidate.Name = *params.Name
+	}
+	if params.Email != nil {
+		candidate.Email = *params.Email
+	}
+	if params.Phone != nil {
+		candidate.Phone = *params.Phone
+	}
+	for key, value := range params.Fields {
+		candidate.Fields[key] = value
+	}
+	if params.Tags == nil {
+		return nil
+	}
+	var tags []string
+	if err := json.Unmarshal(params.Tags, &tags); err != nil {
+		return fmt.Errorf("invalid tags: %w", err)
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+	candidate.Tags = tags
+	return nil
+}
+
+func companyUpdateCandidate(company *models.Company) models.Company {
+	candidate := *company
+	candidate.Fields = make(map[string]any, len(company.Fields))
+	for key, value := range company.Fields {
+		candidate.Fields[key] = value
+	}
+	candidate.Tags = append([]string{}, company.Tags...)
+	return candidate
+}
+
+func applyCompanyUpdate(candidate *models.Company, params updateCompanyParams) error {
+	if params.Name != nil {
+		candidate.Name = *params.Name
+	}
+	if params.Domain != nil {
+		candidate.Domain = *params.Domain
+	}
+	for key, value := range params.Fields {
+		candidate.Fields[key] = value
+	}
+	if params.Tags == nil {
+		return nil
+	}
+	var tags []string
+	if err := json.Unmarshal(params.Tags, &tags); err != nil {
+		return fmt.Errorf("invalid tags: %w", err)
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+	candidate.Tags = tags
+	return nil
 }
 
 func (s *Server) handleDeleteCompany(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
