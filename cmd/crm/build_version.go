@@ -20,5 +20,8 @@ func versionForBuild(linkerVersion string, buildInfo *debug.BuildInfo, buildInfo
 	if !buildInfoOK || buildInfo == nil || buildInfo.Main.Version == "" || buildInfo.Main.Version == "(devel)" {
 		return "dev"
 	}
+	if buildInfo.Main.Sum == "" {
+		return "dev"
+	}
 	return strings.TrimPrefix(buildInfo.Main.Version, "v")
 }

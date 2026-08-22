@@ -8,14 +8,16 @@ import (
 	"testing"
 )
 
+type versionForBuildTestCase struct {
+	name          string
+	linkerVersion string
+	buildInfo     *debug.BuildInfo
+	buildInfoOK   bool
+	want          string
+}
+
 func TestVersionForBuild(t *testing.T) {
-	tests := []struct {
-		name          string
-		linkerVersion string
-		buildInfo     *debug.BuildInfo
-		buildInfoOK   bool
-		want          string
-	}{
+	tests := []versionForBuildTestCase{
 		{
 			name:          "linker version wins over embedded version",
 			linkerVersion: "2.3.0",
@@ -26,9 +28,16 @@ func TestVersionForBuild(t *testing.T) {
 		{
 			name:          "embedded module version supports go install",
 			linkerVersion: "dev",
-			buildInfo:     &debug.BuildInfo{Main: debug.Module{Version: "v2.3.0"}},
+			buildInfo:     &debug.BuildInfo{Main: debug.Module{Version: "v2.3.0", Sum: "h1:installed"}},
 			buildInfoOK:   true,
 			want:          "2.3.0",
+		},
+		{
+			name:          "checkout VCS pseudo-version keeps dev version",
+			linkerVersion: "dev",
+			buildInfo:     &debug.BuildInfo{Main: debug.Module{Version: "v2.2.1-0.20260822183510-ef91f365a575"}},
+			buildInfoOK:   true,
+			want:          "dev",
 		},
 		{
 			name:          "development build keeps dev version",
